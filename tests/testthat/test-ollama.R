@@ -42,6 +42,35 @@ test_that(".build_ollama_request body contains model and stream = FALSE", {
   expect_false(body$stream)
 })
 
+test_that(".build_ollama_request omits format field when format is NULL", {
+  req  <- .build_ollama_request("p", "s", OLLAMA_MODEL, OLLAMA_BASE_URL, format = NULL)
+  expect_null(req$body$data$format)
+})
+
+test_that(".build_ollama_request includes format field when format is provided", {
+  schema <- list(type = "object", properties = list(verdict = list(type = "string")))
+  req    <- .build_ollama_request("p", "s", OLLAMA_MODEL, OLLAMA_BASE_URL, format = schema)
+  expect_equal(req$body$data$format, schema)
+})
+
+test_that("ollama_generate passes format argument through to request", {
+  schema <- list(type = "object")
+  mock_body <- charToRaw(jsonlite::toJSON(
+    list(message = list(role = "assistant", content = "{}")),
+    auto_unbox = TRUE
+  ))
+  local_mocked_responses(function(req) {
+    response(status_code = 200,
+             headers = list("content-type" = "application/json"),
+             body = mock_body)
+  })
+  # Confirm it doesn't error when format is passed
+  expect_no_error(
+    ollama_generate("p", "s", model = "m", base_url = "http://localhost:11434",
+                    format = schema)
+  )
+})
+
 test_that(".build_ollama_request body messages are in system then user order", {
   req  <- .build_ollama_request("my prompt", "my system", OLLAMA_MODEL, OLLAMA_BASE_URL)
   msgs <- req$body$data$messages
