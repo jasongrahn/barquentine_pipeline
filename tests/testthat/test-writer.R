@@ -64,6 +64,24 @@ test_that("write_note succeeds when overwrite is TRUE and file already exists", 
   expect_equal(read_file(file.path(tmp, "npcs/Basil.md")), "second")
 })
 
+test_that("write_note is a no-op when file exists with identical content", {
+  tmp <- local_tempdir()
+  path <- file.path(tmp, "sessions/test.md")
+  write_note("same content", "sessions/test.md", dry_run = TRUE, .dry_run_path = tmp)
+  mtime_before <- file.mtime(path)
+  Sys.sleep(0.05)
+  write_note("same content", "sessions/test.md", dry_run = TRUE, .dry_run_path = tmp)
+  expect_equal(file.mtime(path), mtime_before)
+})
+
+test_that("write_note overwrites when content differs even without overwrite = TRUE in guard path", {
+  tmp <- local_tempdir()
+  write_note("original", "sessions/test.md", dry_run = TRUE, .dry_run_path = tmp)
+  write_note("updated",  "sessions/test.md", dry_run = TRUE, .dry_run_path = tmp,
+             overwrite = TRUE)
+  expect_equal(read_file(file.path(tmp, "sessions/test.md")), "updated")
+})
+
 # --- note_exists() -----------------------------------------------------------
 
 test_that("note_exists returns FALSE when file is absent", {
