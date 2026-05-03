@@ -17,15 +17,15 @@ Local model usage is preferred. Claude API is the escalation path only, not the 
 
 | Model | Role | Trigger |
 |---|---|---|
-| `llama3.1:8b` | Generator | Always — drafts the note from source |
-| `qwen3.5:9b` | Critic | Always (within context limit) — fact-checks draft vs. source |
+| `qwen3.5:9b` | Generator | Always — drafts the note from source |
+| `llama3.1:8b` | Critic | Always (within context limit) — fact-checks draft vs. source |
 | `claude-sonnet-4-6` | Escalation | Flagged + confidence < 0.6, OR source section exceeds context limit |
 | `nomic-embed-text:latest` | Embeddings | Phase 3+ |
 
-**Role rationale**: The critic task is harder — JSON output, verbatim quoting, source comparison,
-structured reasoning. qwen3.5 (more capable) handles the harder task. llama3.1 handles the
-simpler structured note generation from a template. Two different model architectures reviewing
-each other's work provides genuine independence.
+**Role rationale**: qwen3.5 is the proven generator for this content — it produces coherent,
+well-structured notes from raw source material. llama3.1 handles criticism: fact-checking
+against source text, structured JSON output via Ollama schema enforcement. Two different model
+architectures reviewing each other's work provides genuine independence.
 
 **Routing is pure R logic** — deterministic if-else on `verdict` and `confidence`. No model
 is needed for this decision.
