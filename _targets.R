@@ -50,7 +50,8 @@ list(
     write_note(
       content       = session_note_content,
       relative_path = file.path("sessions", paste0(section_ids, ".md")),
-      dry_run       = DRY_RUN
+      dry_run       = DRY_RUN,
+      overwrite     = TRUE
     ),
     pattern = map(session_note_content, section_ids)
   ),

@@ -1,7 +1,8 @@
 # Barquentine Wiki Pipeline — Design Document
-*Version 4.1 — Complete*
+*Version 4.2 — Complete*
 
 ## Changelog
+- v4.2: HTML export fix documented; plain-text truncation finding recorded; `overwrite = TRUE` decision noted in _targets.R
 - v4.1: Basil corrected to PC; `aliases.json` replaced by vault-derived registry; `display_as` frontmatter field introduced
 
 ---
@@ -486,26 +487,31 @@ library(googledrive)
 # Token is cached; subsequent runs are non-interactive
 drive_auth()
 
-# Fetch a Google Doc as plain text by doc ID
+# Fetch a Google Doc as HTML by doc ID
+# NOTE: Must use type = "text/html", NOT "text/plain".
+# Google Drive's plain-text export has a hard ~1000-line truncation limit that
+# silently cuts off content mid-document. For a 40-tab episode notes doc this
+# means everything after S2e17 is lost. HTML export is untruncated (~419 KB).
 fetch_gdoc <- function(doc_id) {
-  tmp <- tempfile(fileext = ".txt")
+  tmp <- tempfile(fileext = ".html")
   drive_download(
     as_id(doc_id),
-    path    = tmp,
-    type    = "text/plain",
+    path      = tmp,
+    type      = "text/html",
     overwrite = TRUE
   )
   readr::read_file(tmp)
 }
 
-# Parse Source B multi-tab doc into named list: {episode_id: text}
+# Parse Source B multi-tab Google Doc HTML into named list: {episode_id: text}
+# Google Docs HTML export uses <p class="title"> tags (not h1 or "# " headings)
+# as tab/section boundaries. Episode IDs are normalised to canonical S<n>e<n>
+# form and non-episode sections (e.g. "Tab 7") are filtered out.
 parse_source_b <- function(doc_text) {
-  # Split on # headings as tab boundaries
-  sections <- str_split(doc_text, "\n(?=# )")[[1]]
-  
-  sections |>
-    set_names(str_extract(sections, "(?<=# )[^\n]+")) |>
-    map(str_trim)
+  # (See R/source_b.R for full implementation)
+  # Splits on <p class="title"> sentinel, extracts/normalises episode IDs,
+  # strips heading tag from section content, strips remaining HTML, decodes
+  # entities, deduplicates adjacent identical IDs.
 }
 ```
 
@@ -563,28 +569,43 @@ source("R/review.R")
 source("R/git_commit.R")
 
 list(
-  # Source B: multi-tab Google Doc
+  # Source B: multi-tab Google Doc (HTML export — see gdrive.R note above)
   tar_target(source_b_raw,      fetch_gdoc(EPISODE_NOTES_DOC_ID)),
   tar_target(source_b_sections, parse_source_b(source_b_raw)),
+  tar_target(section_ids,       names(source_b_sections)),
 
-  # Source C: VTT files from NAS
-  tar_target(vtt_files,    list_vtt_files(NAS_MOUNT)),
-  tar_target(vtt_chunks,   map(vtt_files, chunk_vtt), pattern = map(vtt_files)),
-  tar_target(vtt_entities, map(vtt_chunks, spot_entities_safe), pattern = map(vtt_chunks)),
+  # Alias registry scanned from vault at pipeline start
+  tar_target(alias_registry, build_alias_registry(VAULT_PATH)),
 
-  # Note generation
-  tar_target(session_notes, generate_session_notes(source_b_sections, vtt_entities)),
-  tar_target(npc_notes,     generate_npc_notes(vtt_entities, source_b_sections)),
-  tar_target(location_notes, generate_location_notes(vtt_entities, source_b_sections)),
+  # Session notes — one Claude call per Source B section (dynamic branching)
+  tar_target(
+    session_note_content,
+    claude_generate_note(
+      prompt        = session_prompt(section_ids, source_b_sections),
+      system_prompt = "You are a precise structured data extractor for a D&D campaign wiki. Follow all instructions exactly."
+    ),
+    pattern = map(source_b_sections, section_ids)
+  ),
 
-  # Output
-  tar_target(written, write_vault(
-    session_notes, npc_notes, location_notes,
-    vault_path = VAULT_PATH,
-    dry_run    = DRY_RUN
-  )),
-  tar_target(committed, commit_vault(session_id = CURRENT_SESSION, vault_path = VAULT_PATH),
-             depends_on = written)
+  # Write session notes to vault (or DRY_RUN_PATH)
+  # overwrite = TRUE: intentional — pipeline output replaces prior drafts on each run.
+  # Vault history is preserved by git; overwrite here is safe.
+  tar_target(
+    session_notes_written,
+    write_note(
+      content       = session_note_content,
+      relative_path = file.path("sessions", paste0(section_ids, ".md")),
+      dry_run       = DRY_RUN,
+      overwrite     = TRUE
+    ),
+    pattern = map(session_note_content, section_ids)
+  ),
+
+  # Review log header — depends on all notes being written first
+  tar_target(review_header, { session_notes_written; write_run_header(CURRENT_SESSION) }),
+
+  # Git commit — after notes and review log are written
+  tar_target(vault_committed, { review_header; commit_vault(CURRENT_SESSION) })
 )
 ```
 
@@ -594,7 +615,7 @@ list(
 
 ## 10. Append Mode & Conflict Detection
 
-The pipeline runs after each session. It never silently overwrites.
+The pipeline runs after each session. Session notes are written with `overwrite = TRUE` — the pipeline replaces its own prior output on each run. This is safe because the vault is a git repo; every previous version is recoverable. The "never silently overwrites" principle applies to human-authored content: conflict detection (see below) flags contradictions rather than clobbering them.
 
 ### Rules
 
