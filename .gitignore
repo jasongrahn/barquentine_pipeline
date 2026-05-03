@@ -8,6 +8,7 @@
 
 # User-specific files
 .Ruserdata
+config.R
 
 # Example code in package build process
 *-Ex.R
@@ -47,3 +48,4 @@ po/*~
 
 # RStudio Connect folder
 rsconnect/
+R/.claude/
