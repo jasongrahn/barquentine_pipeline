@@ -61,9 +61,11 @@ CRITIC_RESPONSE_SCHEMA <- list(
 )
 ```
 
-`parse_critic_response()` in `critic.R` still validates required fields (schema enforcement
-guarantees syntax, not semantic completeness) and handles the `parse_error` fallback for
-any remaining failure (e.g. Ollama server returns an error response rather than a model response).
+`CRITIC_RESPONSE_SCHEMA` is defined as a constant in `critic.R` and passed to `ollama_generate()`
+as the `format` argument. `parse_critic_response()` in `critic.R` still validates required fields
+(schema enforcement guarantees syntax, not semantic completeness) and handles the `parse_error`
+fallback for any remaining failure (e.g. Ollama server returns an error response rather than a
+model response).
 
 ---
 
@@ -316,19 +318,34 @@ Location: `shiny/app.R` (within this repo — open source friendly).
 
 ## R Modules — Build Order
 
+**New modules:**
+
 | # | File | Responsibility |
 |---|---|---|
 | 1 | `R/ollama.R` ✓ | Ollama chat API; `ollama_generate()`; `format` param for structured output |
-| 2 | `R/critic.R` | Critic JSON Schema constant; `review_note()`; `parse_critic_response()` |
+| 2 | `R/critic.R` | `CRITIC_RESPONSE_SCHEMA` constant; `review_note()`; `parse_critic_response()` |
 | 3 | `R/router.R` | `route_verdict()` (pure R logic); `dispatch_note()` (orchestrator) |
 | 4 | `R/queue.R` | `enqueue_review()`, `consolidate_queue()`, `read_queue()`, `resolve_item()` |
 | 5 | `R/training.R` | `write_sft()`, `write_dpo()`, `write_negative()` |
 | 6 | `shiny/app.R` | Review UI; reads queue, writes verdicts via writer/review/training |
 | 7 | `_targets.R` | Wire full Phase 2 graph; add `tar_files(sft_example_files, ...)` |
 
+**Existing modules updated:**
+
+| File | Change |
+|---|---|
+| `R/extract.R` | `session_prompt()` gains optional `few_shot_paths` arg; loads up to 10 SFT examples when provided |
+| `R/review.R` | `format_review_entry()` and `append_review_entry()` gain optional `verdict` field for Shiny-sourced entries |
+| `config.R` | `OLLAMA_MODEL` updated to `llama3.1:8b`; `OLLAMA_CRITIC_MODEL`, `GENERATOR_SYSTEM_PROMPT`, and threshold constants added |
+
 ---
 
 ## `_targets.R` Changes (sketch)
+
+The sparse and overlimit checks happen inside `generate_note()` and `review_note()`, not as
+separate targets. `pattern = map()` fires for every section; the functions return sentinel
+values (`NULL` for skipped drafts, `list(verdict = "skipped")` for skipped verdicts) so
+`dispatch_note()` can no-op cleanly. This keeps the targets graph simple.
 
 ```r
 # Track SFT examples — invalidates when Shiny writes new pairs
@@ -336,32 +353,41 @@ tar_files(sft_example_files,
   list.files(file.path(TRAINING_DATA_PATH, "sft"), full.names = TRUE)
 ),
 
-# Generator (local)
+# Generator
+# generate_note() handles all three cases internally:
+#   is_sparse(source)           → return NULL (no draft produced)
+#   word_count > CONTEXT_LIMIT  → call claude_generate_note() instead of ollama
+#   otherwise                   → call ollama_generate() with llama3.1
 tar_target(session_note_draft,
-  ollama_generate(
-    session_prompt(section_ids, source_b_sections, few_shot_paths = sft_example_files),
-    system_prompt = GENERATOR_SYSTEM_PROMPT,
-    model         = OLLAMA_MODEL
+  generate_note(
+    source        = source_b_sections,
+    section_id    = section_ids,
+    few_shot_paths = sft_example_files
   ),
   pattern = map(source_b_sections, section_ids)
 ),
 
-# Critic (structured output via JSON Schema)
+# Critic
+# review_note() handles its own edge cases:
+#   draft is NULL               → return list(verdict = "skipped")
+#   word_count > CONTEXT_LIMIT  → call claude_generate_note() critic prompt instead
+#   otherwise                   → call ollama_generate() with qwen3.5 + JSON Schema
 tar_target(critic_verdict,
   review_note(draft = session_note_draft, source = source_b_sections),
   pattern = map(session_note_draft, source_b_sections)
 ),
 
-# Route + dispatch (vault write or queue staging)
+# Route + dispatch
+# dispatch_note() calls route_verdict(), then write_note() or enqueue_review()
+# verdict == "skipped" → no-op, returns invisible(NULL)
 tar_target(note_dispatched,
   dispatch_note(
-    draft             = session_note_draft,
-    verdict           = critic_verdict,
-    section_id        = section_ids,
-    source_text       = source_b_sections,
-    dry_run           = DRY_RUN
+    draft      = session_note_draft,
+    verdict    = critic_verdict,
+    section_id = section_ids,
+    dry_run    = DRY_RUN
   ),
-  pattern = map(session_note_draft, critic_verdict, section_ids, source_b_sections)
+  pattern = map(session_note_draft, critic_verdict, section_ids)
 ),
 
 # Sequential consolidation — after all branches finish
@@ -378,15 +404,26 @@ tar_target(vault_committed,
 )
 ```
 
+`generate_note()` lives in `extract.R` (alongside `session_prompt()`). It is the Phase 2
+replacement for the direct `ollama_generate()` / `claude_generate_note()` calls in Phase 1.
+
 ---
 
-## Config Additions
+## Config Additions / Changes
 
 ```r
 # Models
-OLLAMA_CRITIC_MODEL <- "qwen3.5:9b"   # critic (more capable → harder task)
-# OLLAMA_MODEL stays "llama3.1:8b"     # generator (template-following task)
-# To swap a model: change the constant here. Critic prompts may need tuning.
+# CHANGED: OLLAMA_MODEL was "qwen3.5:9b" in Phase 1; swapped to lighter generator role
+OLLAMA_MODEL        <- "llama3.1:8b"   # generator (template-following task)
+OLLAMA_CRITIC_MODEL <- "qwen3.5:9b"    # critic (more capable → harder structured task)
+# To swap a model: change the constant here. Critic prompts may need tuning for new models.
+
+# Generator system prompt (defined here for visibility; used in extract.R / _targets.R)
+GENERATOR_SYSTEM_PROMPT <- paste(
+  "You are a precise structured data extractor for a D&D campaign wiki.",
+  "Follow all instructions exactly. Do not infer or fabricate any information",
+  "not present in the source text."
+)
 
 # Routing thresholds
 CRITIC_AUTO_APPROVE_THRESHOLD <- 0.85
