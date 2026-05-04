@@ -22,6 +22,7 @@ RULES — follow exactly:
 5. If the source text is fewer than 100 words, set review_required to true and populate only what is explicitly present.
 6. All entity references (NPCs, locations, items, factions) must use [[wikilink]] syntax.
 7. Output only the markdown note. No explanation, no preamble, no code fences.
+8. The source text is an automated transcript and may contain garbled, split, or misheard words. Do not guess or correct them — write [unclear] in place of any word or phrase you cannot confidently interpret from context.
 
 {few_shot_block}SOURCE TEXT (episode: {episode_id}):
 {section_text}

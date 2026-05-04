@@ -2,12 +2,21 @@ library(shiny)
 library(readr)
 library(jsonlite)
 
-# Run via: shiny::runApp("shiny") from the project root directory
+# shiny::runApp() sets wd to shiny/; reset to project root so all relative
+# paths (review_queue/, training_data/, vault) resolve correctly.
+PROJECT_ROOT <- normalizePath(file.path(getwd(), ".."))
+setwd(PROJECT_ROOT)
+
 source("config.R")
 source("R/queue.R")
 source("R/writer.R")
 source("R/review.R")
 source("R/training.R")
+
+# Capture absolute paths now — before Shiny's session machinery can reset wd.
+QUEUE_PATH_ABS    <- file.path(PROJECT_ROOT, REVIEW_QUEUE_PATH)
+VAULT_PATH_ABS    <- file.path(PROJECT_ROOT, VAULT_PATH)
+TRAINING_PATH_ABS <- file.path(PROJECT_ROOT, TRAINING_DATA_PATH)
 
 parse_json_col <- function(x) {
   tryCatch(fromJSON(x, simplifyVector = FALSE), error = function(e) list())
@@ -52,7 +61,7 @@ ui <- fluidPage(
 
 server <- function(input, output, session) {
 
-  queue_rv     <- reactiveVal(read_queue(status = "pending"))
+  queue_rv     <- reactiveVal(read_queue(.queue_path = QUEUE_PATH_ABS, status = "pending"))
   selected_idx <- reactiveVal(1L)
 
   output$queue_summary <- renderText({
@@ -86,7 +95,7 @@ server <- function(input, output, session) {
   })
 
   observeEvent(input$refresh_btn, {
-    queue_rv(read_queue(status = "pending"))
+    queue_rv(read_queue(.queue_path = QUEUE_PATH_ABS, status = "pending"))
     selected_idx(1L)
   })
 
@@ -178,7 +187,7 @@ server <- function(input, output, session) {
   })
 
   .advance <- function() {
-    queue_rv(read_queue(status = "pending"))
+    queue_rv(read_queue(.queue_path = QUEUE_PATH_ABS, status = "pending"))
     new_n <- nrow(queue_rv())
     if (new_n == 0) {
       selected_idx(1L)
@@ -192,18 +201,19 @@ server <- function(input, output, session) {
   observeEvent(input$accept_btn, {
     row   <- .current_row()
     draft <- null_coalesce(row$draft, "")
-    resolve_item(row$section_id, "accepted")
+    resolve_item(row$section_id, "accepted", .queue_path = QUEUE_PATH_ABS)
     if (nzchar(draft)) {
       write_note(content = draft,
                  relative_path = file.path("sessions", paste0(row$section_id, ".md")),
+                 .vault_path = VAULT_PATH_ABS,
                  dry_run = DRY_RUN, overwrite = TRUE)
       note_path <- file.path("sessions", row$section_id)
       append_review_entry(
         format_review_entry(note_path, "auto-approved by pipeline", verdict = "accepted"),
-        dry_run = DRY_RUN
+        vault_path = VAULT_PATH_ABS, dry_run = DRY_RUN
       )
     }
-    generate_training_data()
+    generate_training_data(.queue_path = QUEUE_PATH_ABS, .training_path = TRAINING_PATH_ABS)
     output$action_msg <- renderUI(
       tags$p(style = "color: #28a745;", paste("Accepted:", row$section_id))
     )
@@ -213,18 +223,20 @@ server <- function(input, output, session) {
   observeEvent(input$accept_edit_btn, {
     row    <- .current_row()
     edited <- input$edited_draft
-    resolve_item(row$section_id, "accepted_with_edit", edited_draft = edited)
+    resolve_item(row$section_id, "accepted_with_edit", edited_draft = edited,
+                 .queue_path = QUEUE_PATH_ABS)
     if (nzchar(trimws(edited))) {
       write_note(content = edited,
                  relative_path = file.path("sessions", paste0(row$section_id, ".md")),
+                 .vault_path = VAULT_PATH_ABS,
                  dry_run = DRY_RUN, overwrite = TRUE)
       note_path <- file.path("sessions", row$section_id)
       append_review_entry(
         format_review_entry(note_path, "accepted with edits", verdict = "accepted_with_edit"),
-        dry_run = DRY_RUN
+        vault_path = VAULT_PATH_ABS, dry_run = DRY_RUN
       )
     }
-    generate_training_data()
+    generate_training_data(.queue_path = QUEUE_PATH_ABS, .training_path = TRAINING_PATH_ABS)
     output$action_msg <- renderUI(
       tags$p(style = "color: #fd7e14;", paste("Accepted with edit:", row$section_id))
     )
@@ -233,13 +245,13 @@ server <- function(input, output, session) {
 
   observeEvent(input$reject_btn, {
     row <- .current_row()
-    resolve_item(row$section_id, "rejected")
+    resolve_item(row$section_id, "rejected", .queue_path = QUEUE_PATH_ABS)
     note_path <- file.path("sessions", row$section_id)
     append_review_entry(
       format_review_entry(note_path, "rejected by reviewer", verdict = "rejected"),
-      dry_run = DRY_RUN
+      vault_path = VAULT_PATH_ABS, dry_run = DRY_RUN
     )
-    generate_training_data()
+    generate_training_data(.queue_path = QUEUE_PATH_ABS, .training_path = TRAINING_PATH_ABS)
     output$action_msg <- renderUI(
       tags$p(style = "color: #dc3545;", paste("Rejected:", row$section_id))
     )
