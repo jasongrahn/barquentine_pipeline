@@ -32,13 +32,21 @@ list(
   # --- Alias registry — scanned from vault at pipeline start -----------------
   tar_target(alias_registry, build_alias_registry(VAULT_PATH)),
 
-  # --- Few-shot examples — invalidates generator when Shiny writes new pairs -
-  tar_files(
+  # --- Few-shot examples — invalidates generator when sft.jsonl changes ------
+  # format = "file" tracks the file hash; downstream targets re-run when
+  # Shiny appends new accepted pairs. File is created empty on first run so
+  # the target always has a valid path to return.
+  tar_target(
     sft_example_files,
     {
       p <- file.path(TRAINING_DATA_PATH, "sft.jsonl")
-      if (file.exists(p)) p else character(0)
-    }
+      if (!file.exists(p)) {
+        dir.create(TRAINING_DATA_PATH, showWarnings = FALSE, recursive = TRUE)
+        file.create(p)
+      }
+      p
+    },
+    format = "file"
   ),
 
   # --- Session notes — qwen3.5:9b generates one draft per section ------------

@@ -22,12 +22,12 @@ enqueue_review <- function(draft, verdict_list, section_id, source_text,
   }
 
   row <- data.frame(
-    section_id       = section_id,
+    section_id       = as.character(section_id)[[1]],
     status           = "pending",
     training_exported = FALSE,
-    draft            = if (is.null(draft)) NA_character_ else draft,
+    draft            = if (is.null(draft)) NA_character_ else as.character(draft)[[1]],
     final_draft      = NA_character_,
-    source_text      = source_text,
+    source_text      = as.character(source_text)[[1]],
     verdict          = verdict_list$verdict,
     confidence       = if (is.null(verdict_list$confidence)) NA_real_ else verdict_list$confidence,
     issues           = toJSON(if (is.null(verdict_list$issues)) list() else verdict_list$issues,
