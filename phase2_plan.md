@@ -108,11 +108,11 @@ Source B section
       ├─ exceeds context limit? (> 3 000 words) ─────────────► Claude path (generate + critique,
       │                                                         two separate calls, same schemas)
       ▼
- Generator (llama3.1)
+ Generator (qwen3.5)
   drafts note from source
       │
       ▼
- Critic (qwen3.5 + JSON Schema format)
+ Critic (llama3.1 + JSON Schema format)
   reviews draft vs. source
   returns schema-validated JSON verdict
       │
@@ -138,6 +138,10 @@ produces consistent training data regardless of which path was taken.
 
 **Routing** is `route_verdict(verdict, confidence)` in `router.R` — pure R, no model call.
 Returns one of: `"auto_approve"`, `"enqueue"`, `"escalate"`.
+
+**Note**: llama3.1:8b handles the critic role despite being the lighter model. Ollama's
+`format` parameter with JSON Schema enforcement handles structured output at the token level,
+making the critic's model capability less critical than it would be for free-form generation.
 
 `dispatch_note()` in `router.R` is the public-facing orchestrator: calls `route_verdict()`,
 then calls `write_note()` or `enqueue_review()` accordingly.
@@ -336,7 +340,7 @@ Location: `shiny/app.R` (within this repo — open source friendly).
 |---|---|
 | `R/extract.R` | `session_prompt()` gains optional `few_shot_paths` arg; loads up to 10 SFT examples when provided |
 | `R/review.R` | `format_review_entry()` and `append_review_entry()` gain optional `verdict` field for Shiny-sourced entries |
-| `config.R` | `OLLAMA_MODEL` updated to `llama3.1:8b`; `OLLAMA_CRITIC_MODEL`, `GENERATOR_SYSTEM_PROMPT`, and threshold constants added |
+| `config.R` | `OLLAMA_MODEL` unchanged (`qwen3.5:9b`); `OLLAMA_CRITIC_MODEL` (`llama3.1:8b`), `GENERATOR_SYSTEM_PROMPT`, and threshold constants added |
 
 ---
 
@@ -357,7 +361,7 @@ tar_files(sft_example_files,
 # generate_note() handles all three cases internally:
 #   is_sparse(source)           → return NULL (no draft produced)
 #   word_count > CONTEXT_LIMIT  → call claude_generate_note() instead of ollama
-#   otherwise                   → call ollama_generate() with llama3.1
+#   otherwise                   → call ollama_generate() with qwen3.5
 tar_target(session_note_draft,
   generate_note(
     source        = source_b_sections,
@@ -371,7 +375,7 @@ tar_target(session_note_draft,
 # review_note() handles its own edge cases:
 #   draft is NULL               → return list(verdict = "skipped")
 #   word_count > CONTEXT_LIMIT  → call claude_generate_note() critic prompt instead
-#   otherwise                   → call ollama_generate() with qwen3.5 + JSON Schema
+#   otherwise                   → call ollama_generate() with llama3.1 + JSON Schema
 tar_target(critic_verdict,
   review_note(draft = session_note_draft, source = source_b_sections),
   pattern = map(session_note_draft, source_b_sections)
@@ -413,9 +417,8 @@ replacement for the direct `ollama_generate()` / `claude_generate_note()` calls 
 
 ```r
 # Models
-# CHANGED: OLLAMA_MODEL was "qwen3.5:9b" in Phase 1; swapped to lighter generator role
-OLLAMA_MODEL        <- "llama3.1:8b"   # generator (template-following task)
-OLLAMA_CRITIC_MODEL <- "qwen3.5:9b"    # critic (more capable → harder structured task)
+OLLAMA_MODEL        <- "qwen3.5:9b"    # generator — unchanged from Phase 1
+OLLAMA_CRITIC_MODEL <- "llama3.1:8b"   # critic — JSON Schema enforcement handles structure
 # To swap a model: change the constant here. Critic prompts may need tuning for new models.
 
 # Generator system prompt (defined here for visibility; used in extract.R / _targets.R)
@@ -453,7 +456,7 @@ training_data/
 - ~~Level 1 timing~~ — tar_files() pattern; tar_make() time only
 - ~~Vault commit from Shiny~~ — no; user's responsibility
 - ~~Queue schema gaps~~ — entity_id / source_episode_id / prompt_path added
-- ~~Model roles~~ — swapped; qwen3.5 critic, llama3.1 generator
+- ~~Model roles~~ — original intent confirmed; qwen3.5 generator, llama3.1 critic
 - ~~Structured output~~ — Ollama format param + JSON Schema
 - ~~Sparse sections~~ — silently skip, log in run header
 - ~~Phase 2 scope~~ — session notes only; schema ready for future note types
