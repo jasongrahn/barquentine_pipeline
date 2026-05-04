@@ -1,5 +1,8 @@
 library(testthat)
+library(httr2)
 
+source(test_path("../../config.R"))
+source(test_path("../../R/ollama.R"))
 source(test_path("../../R/extract.R"))
 
 # --- is_sparse() -------------------------------------------------------------
@@ -99,4 +102,45 @@ test_that("npc_prompt collapses multiple passages with separator", {
   expect_true(grepl("Passage one.", result, fixed = TRUE))
   expect_true(grepl("Passage two.", result, fixed = TRUE))
   expect_true(grepl("---", result, fixed = TRUE))
+})
+
+# --- generate_note() ---------------------------------------------------------
+
+test_that("generate_note returns NULL for sparse section", {
+  sparse <- paste(rep("word", 50), collapse = " ")
+  result <- generate_note("S2e33", sparse)
+  expect_null(result)
+})
+
+test_that("generate_note has correct argument signature", {
+  args <- names(formals(generate_note))
+  expect_true("episode_id"    %in% args)
+  expect_true("section_text"  %in% args)
+  expect_true("model"         %in% args)
+  expect_true("base_url"      %in% args)
+})
+
+test_that("generate_note model defaults to OLLAMA_MODEL", {
+  expect_equal(formals(generate_note)$model, as.name("OLLAMA_MODEL"))
+})
+
+test_that("generate_note base_url defaults to OLLAMA_BASE_URL", {
+  expect_equal(formals(generate_note)$base_url, as.name("OLLAMA_BASE_URL"))
+})
+
+test_that("generate_note calls ollama_generate for non-sparse input", {
+  long_text  <- paste(rep("word", 200), collapse = " ")
+  mock_body  <- charToRaw(jsonlite::toJSON(
+    list(message = list(role = "assistant", content = "# Note\n## Summary\nContent.")),
+    auto_unbox = TRUE
+  ))
+  local_mocked_responses(function(req) {
+    response(status_code = 200,
+             headers = list("content-type" = "application/json"),
+             body = mock_body)
+  })
+  result <- generate_note("S2e33", long_text, model = "m",
+                          base_url = "http://localhost:11434")
+  expect_type(result, "character")
+  expect_true(nchar(result) > 0)
 })

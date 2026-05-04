@@ -11,25 +11,33 @@ library(fs)
 }
 
 enqueue_review <- function(draft, verdict_list, section_id, source_text,
+                           prompt = NULL,
                            .queue_path = REVIEW_QUEUE_PATH) {
   dir_create(file.path(.queue_path, "staging"), recurse = TRUE)
 
+  if (!is.null(prompt)) {
+    prompt_dir <- file.path(.queue_path, "prompts")
+    dir_create(prompt_dir, recurse = TRUE)
+    writeLines(prompt, file.path(prompt_dir, paste0(section_id, ".txt")))
+  }
+
   row <- data.frame(
-    section_id    = section_id,
-    status        = "pending",
-    draft         = if (is.null(draft)) NA_character_ else draft,
-    final_draft   = NA_character_,
-    source_text   = source_text,
-    verdict       = verdict_list$verdict,
-    confidence    = if (is.null(verdict_list$confidence)) NA_real_ else verdict_list$confidence,
-    issues        = toJSON(if (is.null(verdict_list$issues)) list() else verdict_list$issues,
-                           auto_unbox = TRUE),
-    source_quotes = toJSON(if (is.null(verdict_list$source_quotes)) list() else verdict_list$source_quotes,
-                           auto_unbox = TRUE),
-    escalated     = isTRUE(verdict_list$escalated),
-    claude_verdict = if (is.null(verdict_list$claude_verdict)) NA_character_ else verdict_list$claude_verdict,
-    enqueued_at   = format(Sys.time(), "%Y-%m-%dT%H:%M:%S"),
-    resolved_at   = NA_character_,
+    section_id       = section_id,
+    status           = "pending",
+    training_exported = FALSE,
+    draft            = if (is.null(draft)) NA_character_ else draft,
+    final_draft      = NA_character_,
+    source_text      = source_text,
+    verdict          = verdict_list$verdict,
+    confidence       = if (is.null(verdict_list$confidence)) NA_real_ else verdict_list$confidence,
+    issues           = toJSON(if (is.null(verdict_list$issues)) list() else verdict_list$issues,
+                              auto_unbox = TRUE),
+    source_quotes    = toJSON(if (is.null(verdict_list$source_quotes)) list() else verdict_list$source_quotes,
+                              auto_unbox = TRUE),
+    escalated        = isTRUE(verdict_list$escalated),
+    claude_verdict   = if (is.null(verdict_list$claude_verdict)) NA_character_ else verdict_list$claude_verdict,
+    enqueued_at      = format(Sys.time(), "%Y-%m-%dT%H:%M:%S"),
+    resolved_at      = NA_character_,
     stringsAsFactors = FALSE
   )
 
@@ -64,6 +72,7 @@ read_queue <- function(.queue_path = REVIEW_QUEUE_PATH, status = "pending") {
   csv_path <- .queue_csv_path(.queue_path)
   if (!file_exists(csv_path)) {
     return(data.frame(section_id = character(), status = character(),
+                      training_exported = logical(),
                       draft = character(), final_draft = character(),
                       source_text = character(), verdict = character(),
                       confidence = numeric(), issues = character(),

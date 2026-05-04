@@ -49,3 +49,7 @@ po/*~
 # RStudio Connect folder
 rsconnect/
 R/.claude/
+
+# Phase 2 runtime directories (local only)
+review_queue/
+training_data/

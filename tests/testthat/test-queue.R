@@ -205,6 +205,34 @@ test_that("resolve_item errors on invalid resolution", {
   expect_error(resolve_item("S2e10", "maybe", .queue_path = tmp))
 })
 
+# --- enqueue_review() prompt storage ----------------------------------------
+
+test_that("enqueue_review saves prompt file when prompt provided", {
+  tmp <- local_tempdir()
+  enqueue_review("draft", make_verdict(), "S2e10", "source",
+                 prompt = "the generator prompt",
+                 .queue_path = tmp)
+  expect_true(file.exists(file.path(tmp, "prompts", "S2e10.txt")))
+  stored <- paste(readLines(file.path(tmp, "prompts", "S2e10.txt")), collapse = "\n")
+  expect_equal(stored, "the generator prompt")
+})
+
+test_that("enqueue_review does not create prompts dir when prompt is NULL", {
+  tmp <- local_tempdir()
+  enqueue_review("d", make_verdict(), "S2e10", "s", .queue_path = tmp)
+  expect_false(dir.exists(file.path(tmp, "prompts")))
+})
+
+test_that("queue rows have training_exported FALSE by default", {
+  tmp <- local_tempdir()
+  enqueue_review("d", make_verdict(), "S2e10", "s", .queue_path = tmp)
+  consolidate_queue(.queue_path = tmp)
+  df <- readr::read_csv(file.path(tmp, "queue.csv"), show_col_types = FALSE)
+  expect_false(df$training_exported[1])
+})
+
+# --- resolve_item() (original) -----------------------------------------------
+
 test_that("resolve_item errors when section_id not found", {
   tmp <- local_tempdir()
   enqueue_review("d", make_verdict(), "S2e10", "s", .queue_path = tmp)

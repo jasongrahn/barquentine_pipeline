@@ -57,6 +57,14 @@ review_required: false
   )
 }
 
+generate_note <- function(episode_id, section_text,
+                          model    = OLLAMA_MODEL,
+                          base_url = OLLAMA_BASE_URL) {
+  if (is_sparse(section_text)) return(NULL)
+  prompt <- session_prompt(episode_id, section_text)
+  ollama_generate(prompt, GENERATOR_SYSTEM_PROMPT, model = model, base_url = base_url)
+}
+
 npc_prompt <- function(npc_name, source_passages) {
   passages_text <- paste(source_passages, collapse = "\n\n---\n\n")
   glue(
