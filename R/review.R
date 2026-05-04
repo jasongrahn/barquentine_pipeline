@@ -4,8 +4,10 @@ library(readr)
 
 REVIEW_LOG_HEADER <- "# Review Log\n\nItems flagged for DM attention. Check off each item after resolving.\n"
 
-format_review_entry <- function(note_path, reason, run_date = Sys.Date()) {
-  glue("- [ ] [[{note_path}]] \u2014 {reason} ({run_date})")
+format_review_entry <- function(note_path, reason, run_date = Sys.Date(),
+                                verdict = NULL) {
+  verdict_tag <- if (!is.null(verdict)) paste0(" [", verdict, "]") else ""
+  glue("- [ ] [[{note_path}]]{verdict_tag} \u2014 {reason} ({run_date})")
 }
 
 append_review_entry <- function(entry, vault_path = VAULT_PATH,

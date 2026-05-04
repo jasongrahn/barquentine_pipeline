@@ -144,3 +144,59 @@ test_that("generate_note calls ollama_generate for non-sparse input", {
   expect_type(result, "character")
   expect_true(nchar(result) > 0)
 })
+
+# --- session_prompt() few_shot_paths -----------------------------------------
+
+test_that("session_prompt with NULL few_shot_paths produces no EXAMPLE block", {
+  result <- session_prompt("S2e33", "Some source.", few_shot_paths = NULL)
+  expect_false(grepl("FEW-SHOT EXAMPLES", result, fixed = TRUE))
+})
+
+test_that("session_prompt with empty few_shot_paths produces no EXAMPLE block", {
+  result <- session_prompt("S2e33", "Some source.", few_shot_paths = character(0))
+  expect_false(grepl("FEW-SHOT EXAMPLES", result, fixed = TRUE))
+})
+
+test_that("session_prompt with valid SFT jsonl prepends few-shot block", {
+  tmp  <- withr::local_tempdir()
+  path <- file.path(tmp, "sft.jsonl")
+  writeLines(
+    jsonlite::toJSON(list(type = "sft", section_id = "S2e10",
+                          prompt = "src", completion = "# Note"),
+                     auto_unbox = TRUE),
+    path
+  )
+  result <- session_prompt("S2e33", "Some source.", few_shot_paths = path)
+  expect_true(grepl("FEW-SHOT EXAMPLES", result, fixed = TRUE))
+  expect_true(grepl("EXAMPLE OUTPUT", result, fixed = TRUE))
+})
+
+test_that("session_prompt includes source text after the few-shot block", {
+  tmp  <- withr::local_tempdir()
+  path <- file.path(tmp, "sft.jsonl")
+  writeLines(
+    jsonlite::toJSON(list(type = "sft", section_id = "S2e10",
+                          prompt = "src", completion = "# Note"),
+                     auto_unbox = TRUE),
+    path
+  )
+  result <- session_prompt("S2e33", "SENTINEL_SOURCE_TEXT", few_shot_paths = path)
+  examples_pos <- regexpr("FEW-SHOT EXAMPLES", result, fixed = TRUE)[1]
+  sentinel_pos <- regexpr("SENTINEL_SOURCE_TEXT", result, fixed = TRUE)[1]
+  expect_lt(examples_pos, sentinel_pos)
+})
+
+test_that("session_prompt ignores nonexistent file paths", {
+  result <- session_prompt("S2e33", "Some source.",
+                           few_shot_paths = "/nonexistent/path.jsonl")
+  expect_false(grepl("FEW-SHOT EXAMPLES", result, fixed = TRUE))
+})
+
+test_that("generate_note passes few_shot_paths to session_prompt", {
+  fn_body <- paste(deparse(body(generate_note)), collapse = " ")
+  expect_true(grepl("few_shot_paths", fn_body, fixed = TRUE))
+})
+
+test_that("generate_note has few_shot_paths parameter defaulting to NULL", {
+  expect_equal(formals(generate_note)$few_shot_paths, NULL)
+})

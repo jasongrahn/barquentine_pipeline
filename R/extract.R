@@ -7,7 +7,8 @@ is_sparse <- function(text) {
   str_count(text, "\\S+") < SPARSE_THRESHOLD_WORDS
 }
 
-session_prompt <- function(episode_id, section_text) {
+session_prompt <- function(episode_id, section_text, few_shot_paths = NULL) {
+  few_shot_block <- .build_few_shot_block(few_shot_paths)
   glue(
 "You are building an Obsidian markdown wiki for a D&D 5e Spelljammer campaign called Barquentine.
 
@@ -22,7 +23,7 @@ RULES — follow exactly:
 6. All entity references (NPCs, locations, items, factions) must use [[wikilink]] syntax.
 7. Output only the markdown note. No explanation, no preamble, no code fences.
 
-SOURCE TEXT (episode: {episode_id}):
+{few_shot_block}SOURCE TEXT (episode: {episode_id}):
 {section_text}
 
 OUTPUT FORMAT:
@@ -58,11 +59,42 @@ review_required: false
 }
 
 generate_note <- function(episode_id, section_text,
+                          few_shot_paths = NULL,
                           model    = OLLAMA_MODEL,
                           base_url = OLLAMA_BASE_URL) {
   if (is_sparse(section_text)) return(NULL)
-  prompt <- session_prompt(episode_id, section_text)
+  prompt <- session_prompt(episode_id, section_text, few_shot_paths = few_shot_paths)
   ollama_generate(prompt, GENERATOR_SYSTEM_PROMPT, model = model, base_url = base_url)
+}
+
+# Loads up to 10 most recent SFT pairs from JSONL files and formats them as
+# a few-shot block to prepend to the prompt. Returns "" when no files exist.
+.build_few_shot_block <- function(few_shot_paths) {
+  if (is.null(few_shot_paths) || length(few_shot_paths) == 0) return("")
+  paths <- few_shot_paths[file.exists(few_shot_paths)]
+  if (length(paths) == 0) return("")
+
+  records <- list()
+  for (p in paths) {
+    lines <- readLines(p, warn = FALSE)
+    lines <- lines[nzchar(lines)]
+    for (ln in lines) {
+      rec <- tryCatch(jsonlite::fromJSON(ln, simplifyVector = FALSE),
+                      error = function(e) NULL)
+      if (!is.null(rec) && !is.null(rec$prompt) && !is.null(rec$completion))
+        records <- c(records, list(rec))
+    }
+  }
+  if (length(records) == 0) return("")
+
+  records <- tail(records, 10)
+  shots <- vapply(records, function(r) {
+    paste0("EXAMPLE SOURCE INPUT:\n", r$prompt,
+           "\n\nEXAMPLE OUTPUT:\n", r$completion)
+  }, character(1))
+  paste0("--- FEW-SHOT EXAMPLES ---\n",
+         paste(shots, collapse = "\n\n---\n\n"),
+         "\n--- END EXAMPLES ---\n\n")
 }
 
 npc_prompt <- function(npc_name, source_passages) {

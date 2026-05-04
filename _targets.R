@@ -32,10 +32,20 @@ list(
   # --- Alias registry — scanned from vault at pipeline start -----------------
   tar_target(alias_registry, build_alias_registry(VAULT_PATH)),
 
+  # --- Few-shot examples — invalidates generator when Shiny writes new pairs -
+  tar_files(
+    sft_example_files,
+    {
+      p <- file.path(TRAINING_DATA_PATH, "sft.jsonl")
+      if (file.exists(p)) p else character(0)
+    }
+  ),
+
   # --- Session notes — qwen3.5:9b generates one draft per section ------------
   tar_target(
     session_draft,
-    generate_note(section_ids, source_b_sections),
+    generate_note(section_ids, source_b_sections,
+                  few_shot_paths = sft_example_files),
     pattern = map(source_b_sections, section_ids)
   ),
 

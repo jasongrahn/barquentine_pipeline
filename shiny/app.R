@@ -6,6 +6,7 @@ library(jsonlite)
 source("config.R")
 source("R/queue.R")
 source("R/writer.R")
+source("R/review.R")
 source("R/training.R")
 
 parse_json_col <- function(x) {
@@ -189,14 +190,20 @@ server <- function(input, output, session) {
   output$action_msg <- renderUI(NULL)
 
   observeEvent(input$accept_btn, {
-    row <- .current_row()
-    resolve_item(row$section_id, "accepted")
+    row   <- .current_row()
     draft <- null_coalesce(row$draft, "")
+    resolve_item(row$section_id, "accepted")
     if (nzchar(draft)) {
       write_note(content = draft,
                  relative_path = file.path("sessions", paste0(row$section_id, ".md")),
                  dry_run = DRY_RUN, overwrite = TRUE)
+      note_path <- file.path("sessions", row$section_id)
+      append_review_entry(
+        format_review_entry(note_path, "auto-approved by pipeline", verdict = "accepted"),
+        dry_run = DRY_RUN
+      )
     }
+    generate_training_data()
     output$action_msg <- renderUI(
       tags$p(style = "color: #28a745;", paste("Accepted:", row$section_id))
     )
@@ -211,7 +218,13 @@ server <- function(input, output, session) {
       write_note(content = edited,
                  relative_path = file.path("sessions", paste0(row$section_id, ".md")),
                  dry_run = DRY_RUN, overwrite = TRUE)
+      note_path <- file.path("sessions", row$section_id)
+      append_review_entry(
+        format_review_entry(note_path, "accepted with edits", verdict = "accepted_with_edit"),
+        dry_run = DRY_RUN
+      )
     }
+    generate_training_data()
     output$action_msg <- renderUI(
       tags$p(style = "color: #fd7e14;", paste("Accepted with edit:", row$section_id))
     )
@@ -221,6 +234,12 @@ server <- function(input, output, session) {
   observeEvent(input$reject_btn, {
     row <- .current_row()
     resolve_item(row$section_id, "rejected")
+    note_path <- file.path("sessions", row$section_id)
+    append_review_entry(
+      format_review_entry(note_path, "rejected by reviewer", verdict = "rejected"),
+      dry_run = DRY_RUN
+    )
+    generate_training_data()
     output$action_msg <- renderUI(
       tags$p(style = "color: #dc3545;", paste("Rejected:", row$section_id))
     )
