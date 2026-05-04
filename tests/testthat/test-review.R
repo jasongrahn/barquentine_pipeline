@@ -126,6 +126,28 @@ test_that("write_run_header returns the log path invisibly", {
   expect_true(file.exists(result$value))
 })
 
+# --- format_review_entry() verdict field -------------------------------------
+
+test_that("format_review_entry omits verdict tag when verdict is NULL", {
+  result <- format_review_entry("sessions/S2e33", "some reason")
+  expect_false(grepl("\\[accepted\\]", result))
+  expect_false(grepl("\\[rejected\\]", result))
+})
+
+test_that("format_review_entry includes verdict tag when provided", {
+  result <- format_review_entry("sessions/S2e33", "accepted by reviewer",
+                                verdict = "accepted")
+  expect_true(grepl("[accepted]", result, fixed = TRUE))
+})
+
+test_that("format_review_entry verdict tag appears before the em-dash", {
+  result <- format_review_entry("sessions/S2e33", "reason",
+                                verdict = "rejected")
+  tag_pos   <- regexpr("[rejected]", result, fixed = TRUE)[1]
+  dash_pos  <- regexpr("\u2014", result, fixed = TRUE)[1]
+  expect_lt(tag_pos, dash_pos)
+})
+
 # --- Safety: no destructive operations in review.R ---------------------------
 
 test_that("review.R contains no destructive file or directory operations", {
