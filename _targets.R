@@ -9,6 +9,7 @@ tar_option_set(
 source("config.R")
 source("R/gdrive.R")
 source("R/source_b.R")
+source("R/source_c.R")
 source("R/ollama.R")
 source("R/claude.R")
 source("R/extract.R")
@@ -100,6 +101,90 @@ list(
     {
       review_header
       commit_vault(CURRENT_SESSION)
+    }
+  ),
+
+  # --- Phase 3: Source C (VTT) -----------------------------------------------
+
+  # Registry CSV — re-reads when the file changes
+  tar_target(
+    vtt_registry,
+    load_vtt_registry("config/vtt_registry.csv"),
+    format = "file"
+  ),
+
+  # VTT file paths — one per row with episode_id populated
+  tar_target(
+    vtt_file_paths,
+    {
+      vtt_registry
+      reg <- readr::read_csv("config/vtt_registry.csv", show_col_types = FALSE)
+      reg <- reg[!is.na(reg$episode_id) & nzchar(reg$episode_id), ]
+      file.path(NAS_MOUNT, reg$filename)
+    },
+    format = "file"
+  ),
+
+  # Entity spotting — one result per VTT file (llama3.1:8b + JSON Schema)
+  tar_target(
+    vtt_entities,
+    {
+      reg      <- readr::read_csv("config/vtt_registry.csv", show_col_types = FALSE)
+      reg      <- reg[!is.na(reg$episode_id) & nzchar(reg$episode_id), ]
+      ep_id    <- reg$episode_id[match(basename(vtt_file_paths), reg$filename)]
+      process_vtt_file(vtt_file_paths, ep_id)
+    },
+    pattern = map(vtt_file_paths)
+  ),
+
+  # Aggregate passages per entity across all VTT files
+  tar_target(
+    entity_passages,
+    aggregate_entity_passages(vtt_entities, alias_registry)
+  ),
+
+  # Generate NPC/location/faction drafts (qwen3.5:9b)
+  tar_target(
+    entity_draft,
+    generate_entity_note(
+      entity_name     = entity_passages$entity_name,
+      source_passages = entity_passages$source_passages,
+      note_type       = entity_passages$note_type
+    ),
+    pattern = map(entity_passages)
+  ),
+
+  # Critic — same llama3.1:8b critic as session notes
+  tar_target(
+    entity_verdict,
+    review_note(
+      draft  = entity_draft,
+      source = paste(entity_passages$source_passages, collapse = "\n\n")
+    ),
+    pattern = map(entity_draft, entity_passages)
+  ),
+
+  # Dispatch — supplement existing note or create fresh; enqueue for review
+  tar_target(
+    entity_dispatched,
+    dispatch_entity_note(
+      draft              = entity_draft,
+      verdict_list       = entity_verdict,
+      entity_id          = entity_passages$entity_id,
+      entity_name        = entity_passages$entity_name,
+      note_type          = entity_passages$note_type,
+      source_passages    = entity_passages$source_passages,
+      source_episode_ids = entity_passages$source_episode_ids
+    ),
+    pattern = map(entity_draft, entity_verdict, entity_passages)
+  ),
+
+  # Consolidate entity staging files into queue.csv
+  tar_target(
+    entity_queue_consolidated,
+    {
+      entity_dispatched
+      consolidate_queue()
     }
   )
 

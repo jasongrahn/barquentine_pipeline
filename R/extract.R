@@ -147,3 +147,111 @@ review_required: false
 "
   )
 }
+
+location_prompt <- function(location_name, source_passages) {
+  passages_text <- paste(source_passages, collapse = "\n\n---\n\n")
+  glue(
+"You are building an Obsidian markdown wiki for a D&D 5e Spelljammer campaign called Barquentine.
+
+Your task: extract a structured location note for '{location_name}' from the source passages below.
+
+RULES — follow exactly:
+1. Never fabricate. Only include details explicitly stated in the source. Leave fields blank or write 'unknown' if not present.
+2. Preserve any direct quotes verbatim, wrapped in blockquote syntax (> ).
+3. Always populate the source frontmatter field. Every note must include a source: field identifying where the content came from.
+4. The player character formerly known as 'Basil' is referred to in prose as [[Basil|the Captain]]. His own note title remains 'Basil'.
+5. If fewer than 3 distinct facts are present about this location, set review_required to true.
+6. Output only the markdown note. No explanation, no preamble, no code fences.
+7. The source text is an automated transcript and may contain garbled, split, or misheard words. Write [unclear] in place of any word or phrase you cannot confidently interpret from context.
+
+SOURCE PASSAGES:
+{passages_text}
+
+OUTPUT FORMAT:
+---
+tags: [location]
+name: {location_name}
+type: unknown
+region: unknown
+source:
+review_required: false
+---
+
+## Description
+
+## Notable Features
+-
+
+## NPCs Here
+-
+
+## Session Appearances
+-
+
+## GM Notes
+"
+  )
+}
+
+faction_prompt <- function(faction_name, source_passages) {
+  passages_text <- paste(source_passages, collapse = "\n\n---\n\n")
+  glue(
+"You are building an Obsidian markdown wiki for a D&D 5e Spelljammer campaign called Barquentine.
+
+Your task: extract a structured faction note for '{faction_name}' from the source passages below.
+
+RULES — follow exactly:
+1. Never fabricate. Only include details explicitly stated in the source. Leave fields blank or write 'unknown' if not present.
+2. Preserve any direct quotes verbatim, wrapped in blockquote syntax (> ).
+3. Always populate the source frontmatter field. Every note must include a source: field identifying where the content came from.
+4. The player character formerly known as 'Basil' is referred to in prose as [[Basil|the Captain]]. His own note title remains 'Basil'.
+5. If fewer than 3 distinct facts are present about this faction, set review_required to true.
+6. Output only the markdown note. No explanation, no preamble, no code fences.
+7. The source text is an automated transcript and may contain garbled, split, or misheard words. Write [unclear] in place of any word or phrase you cannot confidently interpret from context.
+
+SOURCE PASSAGES:
+{passages_text}
+
+OUTPUT FORMAT:
+---
+tags: [faction]
+name: {faction_name}
+disposition_to_party: unknown
+source:
+review_required: false
+---
+
+## Overview
+
+## Key Members
+-
+
+## Goals
+
+## Session Appearances
+-
+
+## GM Notes
+"
+  )
+}
+
+generate_entity_note <- function(entity_name, source_passages, note_type,
+                                  model       = OLLAMA_MODEL,
+                                  base_url    = OLLAMA_BASE_URL,
+                                  num_predict = 800L) {
+  combined <- paste(source_passages, collapse = "\n\n")
+  if (is_sparse(combined)) return(NULL)
+
+  prompt <- switch(note_type,
+    "npc"      = npc_prompt(entity_name, source_passages),
+    "location" = location_prompt(entity_name, source_passages),
+    "faction"  = faction_prompt(entity_name, source_passages),
+    stop("Unknown note_type: ", note_type)
+  )
+
+  ollama_generate(prompt, GENERATOR_SYSTEM_PROMPT,
+                  model    = model,
+                  base_url = base_url,
+                  options  = list(num_predict = num_predict))
+}

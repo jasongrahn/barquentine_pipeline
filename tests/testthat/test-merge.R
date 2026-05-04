@@ -200,3 +200,62 @@ test_that("merge.R contains no filesystem or write operations", {
   expect_false(grepl("\\bunlink\\b",   src))
   expect_false(grepl("dir_delete",     src, fixed = TRUE))
 })
+
+# --- supplement_note() -------------------------------------------------------
+
+.make_npc_note <- function(status = "unknown") {
+  paste0(
+    "---\ntags: [npc]\nname: Attorrnash\nstatus: ", status, "\nreview_required: false\n---\n\n",
+    "## Overview\nSome content.\n\n",
+    "## Session Appearances\n-\n\n",
+    "## GM Notes\n"
+  )
+}
+
+test_that("supplement_note returns a character string", {
+  note   <- .make_npc_note()
+  result <- supplement_note(note, note, "S2e38", "npc")
+  expect_type(result, "character")
+  expect_equal(length(result), 1L)
+})
+
+test_that("supplement_note appends session link to Session Appearances section", {
+  note   <- .make_npc_note()
+  result <- supplement_note(note, note, "S2e38", "npc")
+  expect_true(grepl("[[S2e38]]", result, fixed = TRUE))
+})
+
+test_that("supplement_note triggers warning callout on frontmatter conflict", {
+  existing <- .make_npc_note("alive")
+  incoming <- .make_npc_note("dead")
+  result   <- supplement_note(existing, incoming, "S2e38", "npc")
+  expect_true(grepl("[!warning]", result, fixed = TRUE))
+  expect_true(grepl("review_required: true", result, fixed = TRUE))
+})
+
+test_that("supplement_note with no conflict preserves existing content", {
+  existing <- paste0(
+    "---\ntags: [npc]\nname: Attorrnash\nstatus: alive\nreview_required: false\n---\n\n",
+    "## Overview\nExisting overview.\n\n",
+    "## Session Appearances\n- [[S2e35]]\n\n",
+    "## GM Notes\n"
+  )
+  incoming <- paste0(
+    "---\ntags: [npc]\nname: Attorrnash\nstatus: alive\nreview_required: false\n---\n\n",
+    "## Overview\nNew overview.\n\n",
+    "## Session Appearances\n-\n\n",
+    "## GM Notes\n"
+  )
+  result <- supplement_note(existing, incoming, "S2e38", "npc")
+  expect_true(grepl("Existing overview.", result, fixed = TRUE))
+  expect_false(grepl("[!warning]", result, fixed = TRUE))
+})
+
+test_that("supplement_note falls back to appending at end when Session Appearances missing", {
+  note_no_section <- paste0(
+    "---\ntags: [npc]\nname: Attorrnash\nstatus: unknown\nreview_required: false\n---\n\n",
+    "## Overview\nSome content.\n"
+  )
+  result <- supplement_note(note_no_section, note_no_section, "S2e38", "npc")
+  expect_true(grepl("[[S2e38]]", result, fixed = TRUE))
+})
