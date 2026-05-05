@@ -232,3 +232,61 @@ test_that("replace_entity_mentions handles multiple distinct entities in one str
   expect_true(grepl("[[Attorrnash]]",          result, fixed = TRUE))
   expect_true(grepl("[[Basil|the Captain]]",   result, fixed = TRUE))
 })
+
+# ---- build_alias_registry() with CSV bootstrap --------------------------------
+
+.write_md_note <- function(dir, filename, fm_lines) {
+  body <- paste0(
+    "---\n",
+    paste(fm_lines, collapse = "\n"), "\n",
+    "---\n\n## Overview\nContent.\n"
+  )
+  writeLines(body, file.path(dir, filename))
+}
+
+test_that("build_alias_registry seeds entries from CSV when vault dirs are empty", {
+  tmp <- withr::local_tempdir()
+  csv <- withr::local_tempfile(fileext = ".csv")
+  writeLines("alias,canonical_slug,display_as\nthe captain,Basil,the Captain\ncaptain,Basil,the Captain", csv)
+
+  registry <- build_alias_registry(vault_path = tmp, aliases_path = csv)
+  expect_true("the captain" %in% names(registry))
+  expect_equal(registry[["the captain"]]$slug, "Basil")
+  expect_equal(registry[["the captain"]]$display, "the Captain")
+})
+
+test_that("build_alias_registry vault YAML overwrites CSV entry on slug collision", {
+  tmp <- withr::local_tempdir()
+  dir.create(file.path(tmp, "pcs"))
+  .write_md_note(file.path(tmp, "pcs"), "Basil.md", c(
+    "name: Basil",
+    "aliases: [Basil, the Captain]",
+    "display_as: the Captain"
+  ))
+  csv <- withr::local_tempfile(fileext = ".csv")
+  writeLines("alias,canonical_slug,display_as\nBasil,Basil,WrongDisplay", csv)
+
+  registry <- build_alias_registry(vault_path = tmp, aliases_path = csv)
+  expect_equal(registry[["Basil"]]$display, "the Captain")
+})
+
+test_that("build_alias_registry returns entries from CSV with blank display_as as NULL", {
+  tmp <- withr::local_tempdir()
+  csv <- withr::local_tempfile(fileext = ".csv")
+  writeLines("alias,canonical_slug,display_as\nBasil Nightingale,Basil,", csv)
+
+  registry <- build_alias_registry(vault_path = tmp, aliases_path = csv)
+  expect_true("Basil Nightingale" %in% names(registry))
+  expect_null(registry[["Basil Nightingale"]]$display)
+})
+
+test_that("build_alias_registry with missing CSV falls back to vault-only entries", {
+  tmp <- withr::local_tempdir()
+  dir.create(file.path(tmp, "npcs"))
+  .write_md_note(file.path(tmp, "npcs"), "Attorrnash.md", c(
+    "name: Attorrnash",
+    "aliases: [Attorrnash]"
+  ))
+  registry <- build_alias_registry(vault_path = tmp, aliases_path = "/no/such/file.csv")
+  expect_true("Attorrnash" %in% names(registry))
+})

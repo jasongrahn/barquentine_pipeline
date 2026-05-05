@@ -113,6 +113,28 @@ list(
     format = "file"
   ),
 
+  # Entity exclusions — DM narrator role tags that must never become vault notes
+  tar_target(
+    entity_exclusions_path,
+    ENTITY_EXCLUSIONS_PATH,
+    format = "file"
+  ),
+  tar_target(
+    entity_exclusions,
+    load_entity_exclusions(entity_exclusions_path)
+  ),
+
+  # Protected entities — known PCs/key NPCs that bypass the frequency filter
+  tar_target(
+    protected_entities_path,
+    PROTECTED_ENTITIES_PATH,
+    format = "file"
+  ),
+  tar_target(
+    protected_slugs,
+    load_protected_slugs(protected_entities_path)
+  ),
+
   # Parsed registry — re-runs when the CSV content changes
   tar_target(
     vtt_registry,
@@ -142,7 +164,9 @@ list(
   # Aggregate passages per entity across all VTT files
   tar_target(
     entity_passages,
-    aggregate_entity_passages(vtt_entities, alias_registry)
+    aggregate_entity_passages(vtt_entities, alias_registry,
+                              exclusion_slugs = entity_exclusions,
+                              protected_slugs = protected_slugs)
   ),
 
   # Generate NPC/location/faction drafts (qwen3.5:9b)

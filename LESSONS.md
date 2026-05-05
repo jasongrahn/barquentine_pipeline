@@ -72,11 +72,36 @@ qwen3.5:9b frequently prepends "Based on the dialogue provided, here is the note
 2. Post-process in `generate_entity_note()`: `sub("^[^-]*(?=---)", "", raw, perl = TRUE)` strips any text before the first fence.
 The second layer is essential — the model is inconsistent even with strong prompt instruction.
 
+### `supplement_note`: guard against empty `existing_text` before delegating to structure-sensitive helpers
+`merge_note` and `append_to_section` both require a parseable Markdown note structure (YAML frontmatter + section headers). When `existing_text` is `""` (0-byte vault file), `.parse_frontmatter` returns `list()`, `merge_note` returns `""` unchanged, and `append_to_section` throws "Section not found". The `tryCatch` rescue then produces `"\n- [[source_id]]"` — not `new_content` — resulting in a 12-byte garbage write.
+
+General rule: any function operating on note structure must guard on empty/whitespace input before calling structural helpers. Add at the top of such functions:
+```r
+if (nchar(trimws(existing_text)) == 0L) return(new_content)
+```
+
 ### Frequency filter ordering: filter on raw chunk text, extract sentences after
 When building entity passage lists, apply the chunk-count frequency filter (`length(unique(source_passages)) >= min_chunks`) on the full raw chunk text, then run sentence-window extraction on survivors only. Reversing the order (extract first, then count) produces shorter strings that are more likely to collide as duplicates, corrupting the frequency count and dropping entities that should survive.
 
 ### Transcription artifacts in source text
 Source text comes from automated transcripts and will contain garbled, split, or misheard words. The generator prompt must instruct the model to write `[unclear]` rather than guess — otherwise it invents plausible-sounding but fabricated content, violating the no-fabrication rule. Reviewers in the Shiny UI should treat `[unclear]` markers as expected, not as model failures.
+
+---
+
+## Testing
+
+---
+
+## Performance
+
+### Parallel entity generation: `tar_make_future()` + `multisession` (deferred to Phase 5)
+Entity note generation is the main throughput bottleneck (~10 min for 8 entities sequentially). The targets-native path to parallelize it:
+```r
+# In _targets.R or a separate run script:
+future::plan(future.callr::callr, workers = 4L)
+targets::tar_make_future(workers = 4L)
+```
+Requires adding `future` and `future.callr` as dependencies. Caveat: Ollama on Apple Silicon is single-threaded per model — benchmark before assuming wall-clock speedup. Each `tar_make_future` worker spawns a separate R session, so `config.R` and all sourced files must be self-contained (no interactive setup).
 
 ---
 
