@@ -250,10 +250,9 @@ generate_entity_note <- function(entity_name, source_passages, note_type,
     stop("Unknown note_type: ", note_type)
   )
 
-  result <- ollama_generate(prompt, GENERATOR_SYSTEM_PROMPT,
-                             model    = model,
-                             base_url = base_url,
-                             options  = list(num_predict = num_predict))
-  if (is.null(result) || !nzchar(trimws(result))) return(NULL)
-  result
+  ollama_generate(prompt, GENERATOR_SYSTEM_PROMPT,
+                  model    = model,
+                  base_url = base_url,
+                  options  = list(num_predict = num_predict),
+                  think    = FALSE)
 }

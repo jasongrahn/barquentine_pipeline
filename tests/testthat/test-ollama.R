@@ -134,3 +134,51 @@ test_that("ollama_generate returns a single character string", {
   expect_type(result, "character")
   expect_length(result, 1)
 })
+
+test_that("ollama_generate returns NULL with warning when content is empty string", {
+  mock_body <- charToRaw(jsonlite::toJSON(
+    list(message = list(role = "assistant", content = "")),
+    auto_unbox = TRUE
+  ))
+  local_mocked_responses(function(req) {
+    response(status_code = 200,
+             headers = list("content-type" = "application/json"),
+             body = mock_body)
+  })
+  expect_warning(
+    result <- ollama_generate("prompt", "system", model = "m",
+                              base_url = "http://localhost:11434"),
+    regexp = "Empty content"
+  )
+  expect_null(result)
+})
+
+test_that("ollama_generate returns NULL with warning when content is whitespace only", {
+  mock_body <- charToRaw(jsonlite::toJSON(
+    list(message = list(role = "assistant", content = "   ")),
+    auto_unbox = TRUE
+  ))
+  local_mocked_responses(function(req) {
+    response(status_code = 200,
+             headers = list("content-type" = "application/json"),
+             body = mock_body)
+  })
+  expect_warning(
+    result <- ollama_generate("prompt", "system", model = "m",
+                              base_url = "http://localhost:11434"),
+    regexp = "Empty content"
+  )
+  expect_null(result)
+})
+
+test_that(".build_ollama_request includes think field in body", {
+  req <- .build_ollama_request("p", "s", OLLAMA_MODEL, OLLAMA_BASE_URL, think = FALSE)
+  expect_false(req$body$data$think)
+
+  req2 <- .build_ollama_request("p", "s", OLLAMA_MODEL, OLLAMA_BASE_URL, think = TRUE)
+  expect_true(req2$body$data$think)
+})
+
+test_that("ollama_generate think defaults to TRUE", {
+  expect_equal(formals(ollama_generate)$think, TRUE)
+})

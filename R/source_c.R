@@ -107,18 +107,29 @@ process_vtt_file <- function(path, episode_id,
   )
 }
 
-aggregate_entity_passages <- function(vtt_file_results, alias_registry) {
+extract_relevant_sentences <- function(passage, entity_name, window = 2L) {
+  sentences <- str_split(passage, "(?<=[.!?])\\s+")[[1]]
+  hits      <- which(str_detect(sentences, regex(entity_name, ignore_case = TRUE)))
+  if (!length(hits)) return("")
+  idx <- unique(sort(c(outer(hits, seq(-window, window, by = 1L), "+"))))
+  idx <- idx[idx >= 1L & idx <= length(sentences)]
+  paste(sentences[idx], collapse = " ")
+}
+
+aggregate_entity_passages <- function(vtt_file_results, alias_registry,
+                                      min_chunks = MIN_ENTITY_CHUNK_COUNT) {
   type_to_note <- c(npcs = "npc", locations = "location", factions = "faction")
   acc <- list()
 
+  # Step 1: merge cross-episode, accumulating raw chunk text
   for (file_result in vtt_file_results) {
     ep_id <- file_result$episode_id
 
-    for (type in c("npcs", "locations", "factions")) {
-      note_type <- type_to_note[[type]]
+    for (etype in c("npcs", "locations", "factions")) {
+      note_type <- type_to_note[[etype]]
 
-      for (name in names(file_result[[type]])) {
-        chunks <- file_result[[type]][[name]]
+      for (name in names(file_result[[etype]])) {
+        chunks <- file_result[[etype]][[name]]
         slug   <- resolve_alias(name, alias_registry)
         if (is.null(slug)) slug <- make_slug(name)
         if (is.list(slug)) slug <- slug$slug
@@ -139,9 +150,41 @@ aggregate_entity_passages <- function(vtt_file_results, alias_registry) {
     }
   }
 
-  lapply(names(acc), function(s) {
-    acc[[s]]$source_passages    <- unique(acc[[s]]$source_passages)
-    acc[[s]]$source_episode_ids <- unique(acc[[s]]$source_episode_ids)
-    acc[[s]]
+  # Step 2: deduplicate, then frequency-filter on full chunk text before extraction
+  kept    <- 0L
+  dropped <- 0L
+  dropped_names <- character(0)
+
+  records <- lapply(names(acc), function(s) {
+    rec <- acc[[s]]
+    rec$source_passages    <- unique(rec$source_passages)
+    rec$source_episode_ids <- unique(rec$source_episode_ids)
+    rec
+  })
+
+  records <- Filter(function(rec) {
+    if (length(rec$source_passages) >= min_chunks) {
+      kept <<- kept + 1L
+      TRUE
+    } else {
+      dropped       <<- dropped + 1L
+      dropped_names <<- c(dropped_names, rec$entity_name)
+      FALSE
+    }
+  }, records)
+
+  message(sprintf(
+    "aggregate_entity_passages: kept %d, dropped %d (threshold=%d). Dropped: %s",
+    kept, dropped, min_chunks,
+    if (length(dropped_names)) paste(head(dropped_names, 10), collapse = ", ") else "none"
+  ))
+
+  # Step 3: sentence-window extraction on survivors only
+  lapply(records, function(rec) {
+    extracted <- vapply(rec$source_passages, extract_relevant_sentences,
+                        character(1), entity_name = rec$entity_name)
+    extracted <- extracted[nzchar(extracted)]
+    rec$source_passages <- if (length(extracted)) extracted else rec$source_passages
+    rec
   })
 }
