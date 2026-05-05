@@ -106,35 +106,37 @@ list(
 
   # --- Phase 3: Source C (VTT) -----------------------------------------------
 
-  # Registry CSV — re-reads when the file changes
+  # Registry CSV path — format="file" tracks the file hash
   tar_target(
-    vtt_registry,
-    load_vtt_registry("config/vtt_registry.csv"),
+    vtt_registry_path,
+    "config/vtt_registry.csv",
     format = "file"
   ),
 
-  # VTT file paths — one per row with episode_id populated
+  # Parsed registry — re-runs when the CSV content changes
+  tar_target(
+    vtt_registry,
+    load_vtt_registry(vtt_registry_path)
+  ),
+
+  # VTT file paths — one per registry row with episode_id populated
   tar_target(
     vtt_file_paths,
-    {
-      vtt_registry
-      reg <- readr::read_csv("config/vtt_registry.csv", show_col_types = FALSE)
-      reg <- reg[!is.na(reg$episode_id) & nzchar(reg$episode_id), ]
-      file.path(NAS_MOUNT, reg$filename)
-    },
-    format = "file"
+    file.path(NAS_MOUNT, vtt_registry$filename)
+  ),
+
+  # Episode IDs aligned with vtt_file_paths (same row order)
+  tar_target(
+    vtt_episode_ids,
+    vtt_registry$episode_id
   ),
 
   # Entity spotting — one result per VTT file (llama3.1:8b + JSON Schema)
+  # list() wrapper prevents targets from flattening named list when aggregating branches
   tar_target(
     vtt_entities,
-    {
-      reg      <- readr::read_csv("config/vtt_registry.csv", show_col_types = FALSE)
-      reg      <- reg[!is.na(reg$episode_id) & nzchar(reg$episode_id), ]
-      ep_id    <- reg$episode_id[match(basename(vtt_file_paths), reg$filename)]
-      process_vtt_file(vtt_file_paths, ep_id)
-    },
-    pattern = map(vtt_file_paths)
+    list(process_vtt_file(vtt_file_paths, vtt_episode_ids)),
+    pattern = map(vtt_file_paths, vtt_episode_ids)
   ),
 
   # Aggregate passages per entity across all VTT files
@@ -144,38 +146,49 @@ list(
   ),
 
   # Generate NPC/location/faction drafts (qwen3.5:9b)
+  # entity_passages is an unnamed list; targets slices with [i] giving list-of-1,
+  # so [[1]] is needed to unwrap the record in each branch.
   tar_target(
     entity_draft,
-    generate_entity_note(
-      entity_name     = entity_passages$entity_name,
-      source_passages = entity_passages$source_passages,
-      note_type       = entity_passages$note_type
-    ),
+    {
+      ep <- entity_passages[[1]]
+      generate_entity_note(
+        entity_name     = ep$entity_name,
+        source_passages = ep$source_passages,
+        note_type       = ep$note_type
+      )
+    },
     pattern = map(entity_passages)
   ),
 
   # Critic — same llama3.1:8b critic as session notes
   tar_target(
     entity_verdict,
-    review_note(
-      draft  = entity_draft,
-      source = paste(entity_passages$source_passages, collapse = "\n\n")
-    ),
+    {
+      ep <- entity_passages[[1]]
+      review_note(
+        draft  = entity_draft,
+        source = paste(ep$source_passages, collapse = "\n\n")
+      )
+    },
     pattern = map(entity_draft, entity_passages)
   ),
 
   # Dispatch — supplement existing note or create fresh; enqueue for review
   tar_target(
     entity_dispatched,
-    dispatch_entity_note(
-      draft              = entity_draft,
-      verdict_list       = entity_verdict,
-      entity_id          = entity_passages$entity_id,
-      entity_name        = entity_passages$entity_name,
-      note_type          = entity_passages$note_type,
-      source_passages    = entity_passages$source_passages,
-      source_episode_ids = entity_passages$source_episode_ids
-    ),
+    {
+      ep <- entity_passages[[1]]
+      dispatch_entity_note(
+        draft              = entity_draft,
+        verdict_list       = entity_verdict,
+        entity_id          = ep$entity_id,
+        entity_name        = ep$entity_name,
+        note_type          = ep$note_type,
+        source_passages    = ep$source_passages,
+        source_episode_ids = ep$source_episode_ids
+      )
+    },
     pattern = map(entity_draft, entity_verdict, entity_passages)
   ),
 

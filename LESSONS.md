@@ -34,8 +34,8 @@ QUEUE_PATH_ABS <- file.path(PROJECT_ROOT, REVIEW_QUEUE_PATH)
 
 ## Ollama / LLM
 
-### Thinking mode needs a high `num_predict` budget
-qwen3.5:9b with thinking enabled can emit hundreds of tokens of `<think>` output before the actual response. Without a `num_predict` cap the model may time out; with too low a cap it truncates the note. `num_predict = 800L` was the working balance at `OLLAMA_TIMEOUT = 300`.
+### Thinking mode needs a high `num_predict` budget; entity notes need more than session notes
+qwen3.5:9b with thinking enabled can emit hundreds of tokens of `<think>` output before the actual response. Without a `num_predict` cap the model may time out; with too low a cap the thinking tokens exhaust the budget and `message.content` comes back empty. `num_predict = 800L` worked for session notes (short Google Doc sections). Entity notes pass multiple full VTT chunks as context (~7,500–43,000 chars), so thinking consumes all 800 tokens and produces no output. `ENTITY_NUM_PREDICT <- 2000L` is a stopgap; the real fix is R-side passage extraction to shorten context before the LLM call. See `docs/entity_pipeline_perf.md`.
 
 ### Use `format` (JSON Schema) for structured critic output
 Ollama's `format` parameter enforces the schema at the token level — the model cannot produce output that violates it. Use it for any call that must return machine-readable JSON (critic verdict). Do not use it for free-text generation (session notes).

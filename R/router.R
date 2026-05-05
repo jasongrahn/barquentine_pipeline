@@ -91,11 +91,12 @@ dispatch_entity_note <- function(draft, verdict_list, entity_id, entity_name,
                                   .vault_path   = VAULT_PATH,
                                   .dry_run_path = DRY_RUN_PATH,
                                   .queue_path   = REVIEW_QUEUE_PATH) {
-  action        <- route_verdict(verdict_list$verdict, verdict_list$confidence)
-  relative_path <- .entity_relative_path(entity_id, note_type)
-  source_text   <- paste(source_passages, collapse = "\n\n---\n\n")
+  action <- route_verdict(verdict_list$verdict, verdict_list$confidence)
 
   if (action == "skip") return(invisible(NULL))
+
+  relative_path <- .entity_relative_path(entity_id, note_type)
+  source_text   <- paste(source_passages, collapse = "\n\n---\n\n")
 
   if (action == "auto_approve") {
     content <- if (note_exists(relative_path, dry_run = dry_run,

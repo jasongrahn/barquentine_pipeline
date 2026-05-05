@@ -30,9 +30,13 @@ ENTITY_SPOT_SYSTEM_PROMPT <- paste(
   sep = "\n"
 )
 
-load_vtt_registry <- function(registry_path = "config/vtt_registry.csv") {
+load_vtt_registry <- function(registry_path = "config/vtt_registry.csv",
+                              active_episodes = ACTIVE_EPISODES) {
   df <- read_csv(registry_path, show_col_types = FALSE)
-  df[!is.na(df$episode_id) & nzchar(df$episode_id), ]
+  df <- df[!is.na(df$episode_id) & nzchar(df$episode_id), ]
+  if (!is.null(active_episodes))
+    df <- df[df$episode_id %in% active_episodes, ]
+  df
 }
 
 read_vtt <- function(path) {

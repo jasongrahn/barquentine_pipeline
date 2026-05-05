@@ -239,7 +239,7 @@ review_required: false
 generate_entity_note <- function(entity_name, source_passages, note_type,
                                   model       = OLLAMA_MODEL,
                                   base_url    = OLLAMA_BASE_URL,
-                                  num_predict = 800L) {
+                                  num_predict = ENTITY_NUM_PREDICT) {
   combined <- paste(source_passages, collapse = "\n\n")
   if (is_sparse(combined)) return(NULL)
 
@@ -250,8 +250,10 @@ generate_entity_note <- function(entity_name, source_passages, note_type,
     stop("Unknown note_type: ", note_type)
   )
 
-  ollama_generate(prompt, GENERATOR_SYSTEM_PROMPT,
-                  model    = model,
-                  base_url = base_url,
-                  options  = list(num_predict = num_predict))
+  result <- ollama_generate(prompt, GENERATOR_SYSTEM_PROMPT,
+                             model    = model,
+                             base_url = base_url,
+                             options  = list(num_predict = num_predict))
+  if (is.null(result) || !nzchar(trimws(result))) return(NULL)
+  result
 }
