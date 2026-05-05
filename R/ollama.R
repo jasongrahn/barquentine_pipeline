@@ -6,18 +6,18 @@ library(purrr)
 # cannot produce output that violates it. Use this for any call that must return
 # machine-readable JSON (e.g. the critic verdict).
 .build_ollama_request <- function(prompt, system_prompt, model, base_url,
-                                  format = NULL, options = NULL, think = TRUE) {
+                                  format = NULL, options = NULL, think = NULL) {
   body <- list(
     model    = model,
     messages = list(
       list(role = "system", content = system_prompt),
       list(role = "user",   content = prompt)
     ),
-    stream = FALSE,
-    think  = think
+    stream = FALSE
   )
   if (!is.null(format))  body$format  <- format
   if (!is.null(options)) body$options <- options
+  if (!is.null(think))   body$think   <- think
 
   request(paste0(base_url, "/api/chat")) |>
     req_headers("content-type" = "application/json") |>
@@ -28,7 +28,7 @@ library(purrr)
 
 ollama_generate <- function(prompt, system_prompt, model = OLLAMA_MODEL,
                             base_url = OLLAMA_BASE_URL, format = NULL,
-                            options = NULL, think = TRUE) {
+                            options = NULL, think = NULL) {
   content <- .build_ollama_request(prompt, system_prompt, model, base_url,
                                    format, options, think) |>
     req_perform() |>

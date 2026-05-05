@@ -356,3 +356,14 @@ test_that("generate_entity_note dispatches to faction_prompt for note_type = 'fa
   expect_true(grepl("faction", captured, ignore.case = TRUE))
   expect_true(grepl("Giff Military", captured, fixed = TRUE))
 })
+
+test_that("generate_entity_note strips preamble before first --- when model adds prose", {
+  assign("ollama_generate",
+         function(...) "Based on the dialogue provided, here is the note.\n\n---\ntags: [npc]\n---\n\n## Overview\n",
+         envir = globalenv())
+  on.exit(rm("ollama_generate", envir = globalenv()), add = TRUE)
+  passages <- list(paste(rep("word", 150), collapse = " "))
+  result <- generate_entity_note("Foo", passages, "npc",
+                                 model = "m", base_url = "http://localhost:11434")
+  expect_true(startsWith(result, "---"))
+})

@@ -171,14 +171,17 @@ test_that("ollama_generate returns NULL with warning when content is whitespace 
   expect_null(result)
 })
 
-test_that(".build_ollama_request includes think field in body", {
-  req <- .build_ollama_request("p", "s", OLLAMA_MODEL, OLLAMA_BASE_URL, think = FALSE)
-  expect_false(req$body$data$think)
+test_that(".build_ollama_request includes think field only when explicitly set", {
+  req_false <- .build_ollama_request("p", "s", OLLAMA_MODEL, OLLAMA_BASE_URL, think = FALSE)
+  expect_false(req_false$body$data$think)
 
-  req2 <- .build_ollama_request("p", "s", OLLAMA_MODEL, OLLAMA_BASE_URL, think = TRUE)
-  expect_true(req2$body$data$think)
+  req_true <- .build_ollama_request("p", "s", OLLAMA_MODEL, OLLAMA_BASE_URL, think = TRUE)
+  expect_true(req_true$body$data$think)
+
+  req_null <- .build_ollama_request("p", "s", OLLAMA_MODEL, OLLAMA_BASE_URL, think = NULL)
+  expect_null(req_null$body$data$think)
 })
 
-test_that("ollama_generate think defaults to TRUE", {
-  expect_equal(formals(ollama_generate)$think, TRUE)
+test_that("ollama_generate think defaults to NULL (omits field from body by default)", {
+  expect_null(formals(ollama_generate)$think)
 })

@@ -113,7 +113,8 @@ RULES — follow exactly:
 3. Always populate the source frontmatter field. Every note must include a source: field identifying where the content came from.
 4. The player character formerly known as 'Basil' is referred to in prose as [[Basil|the Captain]]. His own note title remains 'Basil'.
 5. If fewer than 3 distinct facts are present about this NPC, set review_required to true.
-6. Output only the markdown note. No explanation, no preamble, no code fences.
+6. Output only the markdown note. No explanation, no preamble, no code fences. Your response must begin with exactly `---` on the first line and nothing before it.
+7. The source text is an automated transcript and may contain garbled, split, or misheard words. Write [unclear] in place of any word or phrase you cannot confidently interpret from context.
 
 SOURCE PASSAGES:
 {passages_text}
@@ -161,7 +162,7 @@ RULES — follow exactly:
 3. Always populate the source frontmatter field. Every note must include a source: field identifying where the content came from.
 4. The player character formerly known as 'Basil' is referred to in prose as [[Basil|the Captain]]. His own note title remains 'Basil'.
 5. If fewer than 3 distinct facts are present about this location, set review_required to true.
-6. Output only the markdown note. No explanation, no preamble, no code fences.
+6. Output only the markdown note. No explanation, no preamble, no code fences. Your response must begin with exactly `---` on the first line and nothing before it.
 7. The source text is an automated transcript and may contain garbled, split, or misheard words. Write [unclear] in place of any word or phrase you cannot confidently interpret from context.
 
 SOURCE PASSAGES:
@@ -206,7 +207,7 @@ RULES — follow exactly:
 3. Always populate the source frontmatter field. Every note must include a source: field identifying where the content came from.
 4. The player character formerly known as 'Basil' is referred to in prose as [[Basil|the Captain]]. His own note title remains 'Basil'.
 5. If fewer than 3 distinct facts are present about this faction, set review_required to true.
-6. Output only the markdown note. No explanation, no preamble, no code fences.
+6. Output only the markdown note. No explanation, no preamble, no code fences. Your response must begin with exactly `---` on the first line and nothing before it.
 7. The source text is an automated transcript and may contain garbled, split, or misheard words. Write [unclear] in place of any word or phrase you cannot confidently interpret from context.
 
 SOURCE PASSAGES:
@@ -250,9 +251,12 @@ generate_entity_note <- function(entity_name, source_passages, note_type,
     stop("Unknown note_type: ", note_type)
   )
 
-  ollama_generate(prompt, GENERATOR_SYSTEM_PROMPT,
-                  model    = model,
-                  base_url = base_url,
-                  options  = list(num_predict = num_predict),
-                  think    = FALSE)
+  raw <- ollama_generate(prompt, GENERATOR_SYSTEM_PROMPT,
+                         model    = model,
+                         base_url = base_url,
+                         options  = list(num_predict = num_predict),
+                         think    = FALSE)
+  if (is.null(raw)) return(NULL)
+  # Strip any preamble before the first YAML fence
+  sub("^[^-]*(?=---)", "", raw, perl = TRUE)
 }
