@@ -1,2 +1,90 @@
 # barquentine_pipeline
-building a tool that builds the barquentine_wiki
+
+> *"The wiki doesn't write itself." — Every GM, eventually.*
+
+An automated R pipeline that reads D&D session notes and VTT transcripts, drafts structured Obsidian wiki entries using local LLMs, fact-checks them, and commits the survivors to the vault. Human review happens in a Shiny app. Rejected drafts become training data.
+
+Built for the [Barquentine](https://github.com/jasongrahn/barquentine_wiki) Spelljammer campaign. Probably generalizable. Definitely over-engineered.
+
+---
+
+## What it does
+
+```
+Source B (Google Doc)          Source C (VTT transcripts, NAS)
+   session notes                  7 episodes of table talk
+        │                                    │
+        ▼                                    ▼
+  parse sections               chunk → entity-spot (llama3.1:8b)
+        │                                    │
+        └──────────────┬─────────────────────┘
+                       ▼
+             draft note (qwen3.5:9b)
+                       │
+             fact-check (llama3.1:8b)
+                       │
+              ┌────────┴────────┐
+          confident?         flagged?
+              │                  │
+           auto-write      Shiny review UI
+           to vault              │
+                         accept / edit / reject
+                                 │
+                         training_data/sft.jsonl
+                         training_data/dpo.jsonl
+```
+
+Session notes land in `sessions/`. Entity notes land in `npcs/`, `locations/`, or `factions/`. Approved notes are git-committed to the vault automatically.
+
+---
+
+## Stack
+
+| Thing | What it does here |
+|---|---|
+| [`targets`](https://docs.ropensci.org/targets/) | Pipeline orchestration — incremental, cached, reproducible |
+| [Ollama](https://ollama.com/) | Local LLM server — qwen3.5:9b + llama3.1:8b |
+| Claude API | Escalation tiebreak for low-confidence flagged notes |
+| Google Drive API | Pulls session notes from the campaign doc |
+| Shiny | Human review UI (port 7474) |
+| Obsidian + git | The wiki vault — `barquentine_wiki` repo |
+
+---
+
+## Quick start
+
+```r
+# 1. Mount the NAS (Finder → Go → Connect to Server → smb://LS220D43E.local/share)
+# 2. Set the episode in config.R
+CURRENT_SESSION <- "S2e40"
+ACTIVE_EPISODES <- c("S2e40")   # NULL for all episodes
+DRY_RUN         <- TRUE         # flip to FALSE when ready
+
+# 3. Run
+targets::tar_make()
+
+# 4. Review
+shiny::runApp("shiny", port = 7474)
+```
+
+See `CLAUDE.md` for full commands and architecture details.
+
+---
+
+## Docs
+
+| Doc | What's in it |
+|---|---|
+| [`docs/architecture.md`](docs/architecture.md) | Full design spec — sources, vault structure, note templates, all phases |
+| [`docs/phase2_design.md`](docs/phase2_design.md) | Generator/critic model decisions, routing logic, Ollama format rationale |
+| [`docs/phase3_design.md`](docs/phase3_design.md) | VTT entity pipeline design — key decisions and gotchas |
+| [`docs/phase3_performance.md`](docs/phase3_performance.md) | Why Phase 3 is slow and what to do about it |
+| [`LESSONS.md`](LESSONS.md) | Non-obvious gotchas in R, targets, Shiny, and Ollama |
+
+---
+
+## Rules
+
+1. **Never fabricate.** Every prompt explicitly forbids it. Every note is traceable to a source line.
+2. **Dry run first.** `DRY_RUN <- TRUE` writes to `/tmp/barquentine-preview/` instead of the vault.
+3. **Don't swap models** without reading `docs/phase2_design.md` first.

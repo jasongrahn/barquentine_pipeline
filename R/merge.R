@@ -77,3 +77,14 @@ merge_note <- function(existing_text, incoming_text, source, dry_run = DRY_RUN) 
 
   merged
 }
+
+supplement_note <- function(existing_text, new_content, source_id, note_type) {
+  merged <- merge_note(existing_text, new_content, source = source_id)
+
+  session_link <- paste0("- [[", source_id, "]]")
+
+  tryCatch(
+    append_to_section(merged, "## Session Appearances", session_link),
+    error = function(e) paste0(merged, "\n", session_link)
+  )
+}

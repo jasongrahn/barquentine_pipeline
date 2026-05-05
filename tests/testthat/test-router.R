@@ -144,3 +144,102 @@ test_that("router.R contains no destructive file operations", {
   expect_false(grepl("\\bunlink\\b",  src))
   expect_false(grepl("dir_delete",    src))
 })
+
+# --- .entity_relative_path() -------------------------------------------------
+
+test_that(".entity_relative_path returns correct path for npc", {
+  expect_equal(.entity_relative_path("Attorrnash", "npc"), "npcs/Attorrnash.md")
+})
+
+test_that(".entity_relative_path returns correct path for location", {
+  expect_equal(.entity_relative_path("the_giff_flotilla", "location"),
+               "locations/the_giff_flotilla.md")
+})
+
+test_that(".entity_relative_path returns correct path for faction", {
+  expect_equal(.entity_relative_path("giff_military", "faction"),
+               "factions/giff_military.md")
+})
+
+test_that(".entity_relative_path stops on unknown note_type", {
+  expect_error(.entity_relative_path("foo", "item"), "Unknown note_type")
+})
+
+# --- dispatch_entity_note() --------------------------------------------------
+
+.make_entity_verdict <- function(verdict = "approved", confidence = 0.90) {
+  list(verdict = verdict, confidence = confidence,
+       issues = list(), source_quotes = list(),
+       escalated = FALSE, claude_verdict = NA_character_)
+}
+
+test_that("dispatch_entity_note returns NULL invisibly on skipped verdict", {
+  v      <- .make_entity_verdict("skipped", NA)
+  result <- withVisible(
+    dispatch_entity_note("draft", v, "Attorrnash", "Attorrnash", "npc",
+                          list("passage"), list("S2e38"))
+  )
+  expect_null(result$value)
+  expect_false(result$visible)
+})
+
+test_that("dispatch_entity_note auto_approve writes to npcs/ subdirectory", {
+  tmp <- withr::local_tempdir()
+  assign("note_exists",   function(...) FALSE,            envir = globalenv())
+  assign("write_note",    function(content, relative_path, ...) {
+    assign("written_path", relative_path, envir = globalenv())
+    invisible(NULL)
+  }, envir = globalenv())
+  on.exit({
+    rm("note_exists", "write_note", "written_path", envir = globalenv())
+  }, add = TRUE)
+
+  v <- .make_entity_verdict("approved", 0.95)
+  dispatch_entity_note("draft", v, "Attorrnash", "Attorrnash", "npc",
+                        list("passage"), list("S2e38"),
+                        .vault_path = tmp, .dry_run_path = tmp,
+                        .queue_path = tmp)
+  expect_equal(get("written_path", envir = globalenv()), "npcs/Attorrnash.md")
+})
+
+test_that("dispatch_entity_note enqueue calls enqueue_review with entity_id as section_id", {
+  tmp <- withr::local_tempdir()
+  captured_id <- NULL
+  assign("enqueue_review", function(draft, verdict_list, section_id, ...) {
+    captured_id <<- section_id
+    invisible(section_id)
+  }, envir = globalenv())
+  on.exit(rm("enqueue_review", envir = globalenv()), add = TRUE)
+
+  v <- .make_entity_verdict("approved", 0.50)  # below auto-approve threshold → enqueue
+  dispatch_entity_note("draft", v, "Attorrnash", "Attorrnash", "npc",
+                        list("passage"), list("S2e38"),
+                        .vault_path = tmp, .dry_run_path = tmp,
+                        .queue_path = tmp)
+  expect_equal(captured_id, "Attorrnash")
+})
+
+test_that("dispatch_entity_note supplement path calls supplement_note when note exists", {
+  tmp <- withr::local_tempdir()
+  note_path <- file.path(tmp, "npcs", "Attorrnash.md")
+  dir.create(dirname(note_path), recursive = TRUE)
+  writeLines("---\ntags: [npc]\nname: Attorrnash\nreview_required: false\n---\n\n## Session Appearances\n-\n\n## GM Notes\n",
+             note_path)
+
+  assign("note_exists",     function(...) TRUE,    envir = globalenv())
+  assign("get_output_path", function(...) note_path, envir = globalenv())
+  supplement_called <- FALSE
+  assign("supplement_note", function(...) { supplement_called <<- TRUE; "merged" },
+         envir = globalenv())
+  assign("write_note", function(...) invisible(NULL), envir = globalenv())
+  on.exit(rm("note_exists", "get_output_path", "supplement_note", "write_note",
+             envir = globalenv()), add = TRUE)
+
+  v <- .make_entity_verdict("approved", 0.95)
+  dispatch_entity_note("draft", v, "Attorrnash", "Attorrnash", "npc",
+                        list("passage"), list("S2e38"),
+                        dry_run = TRUE,
+                        .vault_path = tmp, .dry_run_path = tmp,
+                        .queue_path = tmp)
+  expect_true(supplement_called)
+})

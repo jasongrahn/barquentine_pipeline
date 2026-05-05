@@ -200,3 +200,170 @@ test_that("generate_note passes few_shot_paths to session_prompt", {
 test_that("generate_note has few_shot_paths parameter defaulting to NULL", {
   expect_equal(formals(generate_note)$few_shot_paths, NULL)
 })
+
+# --- location_prompt() -------------------------------------------------------
+
+test_that("location_prompt returns a character string", {
+  result <- location_prompt("The Giff Flotilla", list("It is a large ship."))
+  expect_type(result, "character")
+  expect_equal(length(result), 1L)
+})
+
+test_that("location_prompt interpolates location_name into the output", {
+  result <- location_prompt("The Giff Flotilla", list("It is a large ship."))
+  expect_true(grepl("The Giff Flotilla", result, fixed = TRUE))
+})
+
+test_that("location_prompt contains the no-fabrication rule using 'never'", {
+  result <- location_prompt("The Giff Flotilla", list("Some content."))
+  expect_true(grepl("never", result, ignore.case = TRUE))
+})
+
+test_that("location_prompt contains explicit [[Basil|the Captain]] instruction", {
+  result <- location_prompt("The Giff Flotilla", list("Some content."))
+  expect_true(grepl("[[Basil|the Captain]]", result, fixed = TRUE))
+})
+
+test_that("location_prompt contains mark-source rule", {
+  result <- location_prompt("The Giff Flotilla", list("Some content."))
+  expect_true(grepl("source", result))
+})
+
+test_that("location_prompt collapses multiple passages with separator", {
+  result <- location_prompt("The Giff Flotilla", list("Passage one.", "Passage two."))
+  expect_true(grepl("Passage one.", result, fixed = TRUE))
+  expect_true(grepl("Passage two.", result, fixed = TRUE))
+  expect_true(grepl("---", result, fixed = TRUE))
+})
+
+test_that("location_prompt contains review_required instruction", {
+  result <- location_prompt("The Giff Flotilla", list("Some content."))
+  expect_true(grepl("review_required", result))
+})
+
+test_that("location_prompt contains [unclear] instruction for transcript artifacts", {
+  result <- location_prompt("The Giff Flotilla", list("Some content."))
+  expect_true(grepl("[unclear]", result, fixed = TRUE))
+})
+
+# --- faction_prompt() --------------------------------------------------------
+
+test_that("faction_prompt returns a character string", {
+  result <- faction_prompt("Giff Military", list("They are well-armed."))
+  expect_type(result, "character")
+  expect_equal(length(result), 1L)
+})
+
+test_that("faction_prompt interpolates faction_name into the output", {
+  result <- faction_prompt("Giff Military", list("They are well-armed."))
+  expect_true(grepl("Giff Military", result, fixed = TRUE))
+})
+
+test_that("faction_prompt contains the no-fabrication rule using 'never'", {
+  result <- faction_prompt("Giff Military", list("Some content."))
+  expect_true(grepl("never", result, ignore.case = TRUE))
+})
+
+test_that("faction_prompt contains explicit [[Basil|the Captain]] instruction", {
+  result <- faction_prompt("Giff Military", list("Some content."))
+  expect_true(grepl("[[Basil|the Captain]]", result, fixed = TRUE))
+})
+
+test_that("faction_prompt contains mark-source rule", {
+  result <- faction_prompt("Giff Military", list("Some content."))
+  expect_true(grepl("source", result))
+})
+
+test_that("faction_prompt collapses multiple passages with separator", {
+  result <- faction_prompt("Giff Military", list("Passage one.", "Passage two."))
+  expect_true(grepl("Passage one.", result, fixed = TRUE))
+  expect_true(grepl("Passage two.", result, fixed = TRUE))
+  expect_true(grepl("---", result, fixed = TRUE))
+})
+
+test_that("faction_prompt contains review_required instruction", {
+  result <- faction_prompt("Giff Military", list("Some content."))
+  expect_true(grepl("review_required", result))
+})
+
+test_that("faction_prompt contains [unclear] instruction for transcript artifacts", {
+  result <- faction_prompt("Giff Military", list("Some content."))
+  expect_true(grepl("[unclear]", result, fixed = TRUE))
+})
+
+# --- generate_entity_note() --------------------------------------------------
+
+test_that("generate_entity_note returns NULL for sparse combined passages", {
+  sparse <- list(paste(rep("word", 30), collapse = " "))
+  result <- generate_entity_note("Attorrnash", sparse, "npc")
+  expect_null(result)
+})
+
+test_that("generate_entity_note has correct argument signature", {
+  args <- names(formals(generate_entity_note))
+  expect_true("entity_name"     %in% args)
+  expect_true("source_passages" %in% args)
+  expect_true("note_type"       %in% args)
+  expect_true("model"           %in% args)
+  expect_true("base_url"        %in% args)
+})
+
+test_that("generate_entity_note model defaults to OLLAMA_MODEL", {
+  expect_equal(formals(generate_entity_note)$model, as.name("OLLAMA_MODEL"))
+})
+
+test_that("generate_entity_note base_url defaults to OLLAMA_BASE_URL", {
+  expect_equal(formals(generate_entity_note)$base_url, as.name("OLLAMA_BASE_URL"))
+})
+
+test_that("generate_entity_note stops on unknown note_type", {
+  passages <- list(paste(rep("word", 200), collapse = " "))
+  expect_error(
+    generate_entity_note("Foo", passages, "item"),
+    "Unknown note_type"
+  )
+})
+
+test_that("generate_entity_note dispatches to npc_prompt for note_type = 'npc'", {
+  captured <- NULL
+  assign("ollama_generate", function(prompt, ...) { captured <<- prompt; "# NPC" },
+         envir = globalenv())
+  on.exit(rm("ollama_generate", envir = globalenv()), add = TRUE)
+  passages <- list(paste(rep("word", 200), collapse = " "))
+  generate_entity_note("Attorrnash", passages, "npc", model = "m", base_url = "http://localhost:11434")
+  expect_true(grepl("npc", captured, ignore.case = TRUE))
+  expect_true(grepl("Attorrnash", captured, fixed = TRUE))
+})
+
+test_that("generate_entity_note dispatches to location_prompt for note_type = 'location'", {
+  captured <- NULL
+  assign("ollama_generate", function(prompt, ...) { captured <<- prompt; "# Location" },
+         envir = globalenv())
+  on.exit(rm("ollama_generate", envir = globalenv()), add = TRUE)
+  passages <- list(paste(rep("word", 200), collapse = " "))
+  generate_entity_note("The Giff Flotilla", passages, "location", model = "m", base_url = "http://localhost:11434")
+  expect_true(grepl("location", captured, ignore.case = TRUE))
+  expect_true(grepl("The Giff Flotilla", captured, fixed = TRUE))
+})
+
+test_that("generate_entity_note dispatches to faction_prompt for note_type = 'faction'", {
+  captured <- NULL
+  assign("ollama_generate", function(prompt, ...) { captured <<- prompt; "# Faction" },
+         envir = globalenv())
+  on.exit(rm("ollama_generate", envir = globalenv()), add = TRUE)
+  passages <- list(paste(rep("word", 200), collapse = " "))
+  generate_entity_note("Giff Military", passages, "faction", model = "m", base_url = "http://localhost:11434")
+  expect_true(grepl("faction", captured, ignore.case = TRUE))
+  expect_true(grepl("Giff Military", captured, fixed = TRUE))
+})
+
+test_that("generate_entity_note strips preamble before first --- when model adds prose", {
+  assign("ollama_generate",
+         function(...) "Based on the dialogue provided, here is the note.\n\n---\ntags: [npc]\n---\n\n## Overview\n",
+         envir = globalenv())
+  on.exit(rm("ollama_generate", envir = globalenv()), add = TRUE)
+  passages <- list(paste(rep("word", 150), collapse = " "))
+  result <- generate_entity_note("Foo", passages, "npc",
+                                 model = "m", base_url = "http://localhost:11434")
+  expect_true(startsWith(result, "---"))
+})
