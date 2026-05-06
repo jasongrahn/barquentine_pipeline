@@ -1,3 +1,11 @@
+# global.R is auto-sourced by runApp(dir) but not runApp(file).
+# This guard makes both invocation styles work and recovers from stale session state.
+if (!exists("PROJECT_ROOT")) {
+  PROJECT_ROOT <- normalizePath(file.path(getwd(), "../.."))
+  setwd(PROJECT_ROOT)
+  source("shiny/review_queue/global.R")
+}
+
 ui <- fluidPage(
   useShinyjs(),
   tags$head(tags$style(HTML("
