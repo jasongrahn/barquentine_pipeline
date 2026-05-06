@@ -7,6 +7,11 @@ is_sparse <- function(text) {
   str_count(text, "\\S+") < SPARSE_THRESHOLD_WORDS
 }
 
+load_campaign_facts <- function(path = "config/campaign_facts.md") {
+  if (!file.exists(path)) return("")
+  paste(readLines(path, warn = FALSE), collapse = "\n")
+}
+
 session_prompt <- function(episode_id, section_text, few_shot_paths = NULL) {
   few_shot_block <- .build_few_shot_block(few_shot_paths)
   glue(
@@ -100,9 +105,32 @@ generate_note <- function(episode_id, section_text,
          "\n--- END EXAMPLES ---\n\n")
 }
 
-npc_prompt <- function(npc_name, source_passages) {
+.regen_context_block <- function(prior_draft, critic_findings, user_feedback) {
+  parts <- character(0)
+  if (!is.null(prior_draft) && nzchar(trimws(prior_draft)))
+    parts <- c(parts, paste0("PREVIOUS DRAFT (do not repeat as-is; improve it):\n", prior_draft))
+  if (!is.null(critic_findings) && length(critic_findings) > 0)
+    parts <- c(parts, paste0("CRITIC ISSUES TO ADDRESS:\n- ",
+                              paste(unlist(critic_findings), collapse = "\n- ")))
+  if (!is.null(user_feedback) && nzchar(trimws(user_feedback)))
+    parts <- c(parts, paste0("REVIEWER FEEDBACK:\n", user_feedback))
+  if (length(parts) == 0) return("")
+  paste0("\n\n--- REGENERATION CONTEXT ---\n",
+         paste(parts, collapse = "\n\n"),
+         "\n\nAddress all critic issues and incorporate reviewer feedback in your revised draft.")
+}
+
+npc_prompt <- function(npc_name, source_passages,
+                        campaign_facts  = "",
+                        prior_draft     = NULL,
+                        critic_findings = NULL,
+                        user_feedback   = NULL) {
   passages_text <- paste(source_passages, collapse = "\n\n---\n\n")
-  glue(
+  facts_block   <- if (nzchar(trimws(campaign_facts)))
+    paste0("\n\nKNOWN CAMPAIGN FACTS:\n", campaign_facts) else ""
+  regen_block   <- .regen_context_block(prior_draft, critic_findings, user_feedback)
+
+  paste0(glue(
 "You are building an Obsidian markdown wiki for a D&D 5e Spelljammer campaign called Barquentine.
 
 Your task: extract a structured NPC note for '{npc_name}' from the source passages below.
@@ -146,12 +174,20 @@ review_required: false
 
 ## GM Notes
 "
-  )
+  ), facts_block, regen_block)
 }
 
-location_prompt <- function(location_name, source_passages) {
+location_prompt <- function(location_name, source_passages,
+                             campaign_facts  = "",
+                             prior_draft     = NULL,
+                             critic_findings = NULL,
+                             user_feedback   = NULL) {
   passages_text <- paste(source_passages, collapse = "\n\n---\n\n")
-  glue(
+  facts_block   <- if (nzchar(trimws(campaign_facts)))
+    paste0("\n\nKNOWN CAMPAIGN FACTS:\n", campaign_facts) else ""
+  regen_block   <- .regen_context_block(prior_draft, critic_findings, user_feedback)
+
+  paste0(glue(
 "You are building an Obsidian markdown wiki for a D&D 5e Spelljammer campaign called Barquentine.
 
 Your task: extract a structured location note for '{location_name}' from the source passages below.
@@ -191,12 +227,20 @@ review_required: false
 
 ## GM Notes
 "
-  )
+  ), facts_block, regen_block)
 }
 
-faction_prompt <- function(faction_name, source_passages) {
+faction_prompt <- function(faction_name, source_passages,
+                            campaign_facts  = "",
+                            prior_draft     = NULL,
+                            critic_findings = NULL,
+                            user_feedback   = NULL) {
   passages_text <- paste(source_passages, collapse = "\n\n---\n\n")
-  glue(
+  facts_block   <- if (nzchar(trimws(campaign_facts)))
+    paste0("\n\nKNOWN CAMPAIGN FACTS:\n", campaign_facts) else ""
+  regen_block   <- .regen_context_block(prior_draft, critic_findings, user_feedback)
+
+  paste0(glue(
 "You are building an Obsidian markdown wiki for a D&D 5e Spelljammer campaign called Barquentine.
 
 Your task: extract a structured faction note for '{faction_name}' from the source passages below.
@@ -234,20 +278,29 @@ review_required: false
 
 ## GM Notes
 "
-  )
+  ), facts_block, regen_block)
 }
 
 generate_entity_note <- function(entity_name, source_passages, note_type,
-                                  model       = OLLAMA_MODEL,
-                                  base_url    = OLLAMA_BASE_URL,
-                                  num_predict = ENTITY_NUM_PREDICT) {
+                                  model           = OLLAMA_MODEL,
+                                  base_url        = OLLAMA_BASE_URL,
+                                  num_predict     = ENTITY_NUM_PREDICT,
+                                  campaign_facts  = NULL,
+                                  prior_draft     = NULL,
+                                  critic_findings = NULL,
+                                  user_feedback   = NULL) {
   combined <- paste(source_passages, collapse = "\n\n")
   if (is_sparse(combined)) return(NULL)
 
+  facts <- if (is.null(campaign_facts)) load_campaign_facts() else campaign_facts
+
   prompt <- switch(note_type,
-    "npc"      = npc_prompt(entity_name, source_passages),
-    "location" = location_prompt(entity_name, source_passages),
-    "faction"  = faction_prompt(entity_name, source_passages),
+    "npc"      = npc_prompt(entity_name, source_passages, facts,
+                             prior_draft, critic_findings, user_feedback),
+    "location" = location_prompt(entity_name, source_passages, facts,
+                                  prior_draft, critic_findings, user_feedback),
+    "faction"  = faction_prompt(entity_name, source_passages, facts,
+                                 prior_draft, critic_findings, user_feedback),
     stop("Unknown note_type: ", note_type)
   )
 
@@ -257,6 +310,5 @@ generate_entity_note <- function(entity_name, source_passages, note_type,
                          options  = list(num_predict = num_predict),
                          think    = FALSE)
   if (is.null(raw)) return(NULL)
-  # Strip any preamble before the first YAML fence
   sub("^[^-]*(?=---)", "", raw, perl = TRUE)
 }

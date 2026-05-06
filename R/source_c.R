@@ -130,6 +130,14 @@ extract_relevant_sentences <- function(passage, entity_name, window = 2L) {
   paste(sentences[idx], collapse = " ")
 }
 
+.is_garbage_name <- function(name) {
+  if (!grepl("[a-zA-Z]", name)) return(TRUE)
+  if (nchar(name) > 50L)       return(TRUE)
+  normalized <- tolower(gsub("[^a-z]", "_", tolower(trimws(name))))
+  grepl("^(missing|not_present|not_mentioned|implied_but|unclear|error_from|unknown_name)$",
+        normalized)
+}
+
 aggregate_entity_passages <- function(vtt_file_results, alias_registry,
                                       min_chunks = MIN_ENTITY_CHUNK_COUNT,
                                       exclusion_slugs = character(0),
@@ -146,6 +154,10 @@ aggregate_entity_passages <- function(vtt_file_results, alias_registry,
 
       for (name in names(file_result[[etype]])) {
         chunks <- file_result[[etype]][[name]]
+        if (.is_garbage_name(name)) {
+          message(sprintf("  [garbage name] dropped: '%s'", name))
+          next
+        }
         slug   <- resolve_alias(name, alias_registry)
         if (is.null(slug)) slug <- make_slug(name)
         if (is.list(slug)) slug <- slug$slug
