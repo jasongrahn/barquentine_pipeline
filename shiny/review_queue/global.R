@@ -43,6 +43,16 @@ VAULT_PATH_ABS <- VAULT_PATH  # already absolute in config.R
 
 .nc <- function(x, default = "") if (is.null(x) || (length(x) == 1 && is.na(x))) default else x
 
+.confidence_badge <- function(verdict, confidence) {
+  if (!is.na(confidence) && confidence < 0.50)
+    return(tags$span(class = "conf-danger",  "❌ ", sprintf("%.0f%%", confidence * 100)))
+  if (!is.na(confidence) && verdict == "approved")
+    return(tags$span(class = "conf-approved", "✅ ", sprintf("%.0f%%", confidence * 100)))
+  if (!is.na(confidence))
+    return(tags$span(class = "conf-warn",    "⚠ ", sprintf("%.0f%%", confidence * 100)))
+  NULL
+}
+
 .parse_json_col <- function(x) {
   tryCatch(fromJSON(.nc(x, "[]"), simplifyVector = FALSE), error = function(e) list())
 }

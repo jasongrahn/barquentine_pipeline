@@ -12,16 +12,6 @@ server <- function(input, output, session) {
   action_log_rv      <- reactiveVal(list())
   pending_approve_rv <- reactiveVal(NULL)
 
-  .confidence_badge <- function(verdict, confidence) {
-    if (!is.na(confidence) && confidence < 0.50)
-      return(tags$span(class = "conf-danger",  "\u274C ", sprintf("%.0f%%", confidence * 100)))
-    if (!is.na(confidence) && verdict == "approved")
-      return(tags$span(class = "conf-approved", "\u2705 ", sprintf("%.0f%%", confidence * 100)))
-    if (!is.na(confidence))
-      return(tags$span(class = "conf-warn",    "\u26A0 ", sprintf("%.0f%%", confidence * 100)))
-    NULL
-  }
-
   .log_action <- function(section_id, entity_name, label, prior_draft = NULL,
                            was_merged = FALSE) {
     entry <- list(
