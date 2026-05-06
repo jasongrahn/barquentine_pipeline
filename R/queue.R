@@ -201,6 +201,35 @@ revert_to_pending <- function(section_id, prior_draft = NULL,
   invisible(section_id)
 }
 
+merge_queue_items <- function(absorbed_id, target_id, .queue_path = REVIEW_QUEUE_PATH) {
+  csv_path <- .queue_csv_path(.queue_path)
+  df  <- read_csv(csv_path, show_col_types = FALSE)
+  df  <- .fill_missing_columns(df)
+
+  abs_idx <- which(df$section_id == absorbed_id)
+  tgt_idx <- which(df$section_id == target_id)
+  if (length(abs_idx) == 0 || length(tgt_idx) == 0)
+    stop("One or both section IDs not found in queue.")
+
+  abs_src <- .nc(df$source_text[abs_idx], "")
+  tgt_src <- .nc(df$source_text[tgt_idx], "")
+  if (nzchar(abs_src)) {
+    df$source_text[tgt_idx] <- if (nzchar(tgt_src))
+      paste(tgt_src, abs_src, sep = "\n\n---\n\n")
+    else
+      abs_src
+  }
+
+  now <- format(Sys.time(), "%Y-%m-%dT%H:%M:%S")
+  df$status[abs_idx]         <- "merged"
+  df$resolved_at[abs_idx]    <- now
+  df$last_action_at[abs_idx] <- now
+  df$merged_into[abs_idx]    <- target_id
+
+  write_csv(df, csv_path)
+  invisible(df)
+}
+
 update_dismissed_findings <- function(section_id, finding_idx,
                                        .queue_path = REVIEW_QUEUE_PATH) {
   csv_path <- .queue_csv_path(.queue_path)

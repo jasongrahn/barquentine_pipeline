@@ -1,3 +1,8 @@
+.similar_ids <- function(section_id, all_ids) {
+  candidates <- setdiff(all_ids, section_id)
+  candidates[startsWith(section_id, candidates) | startsWith(candidates, section_id)]
+}
+
 render_sidebar <- function(queue_df, selected_id, total_count = NULL) {
   if (is.null(queue_df) || nrow(queue_df) == 0)
     return(p("No entity notes pending.", style = "color: #888; font-size: 0.9em;"))
@@ -45,6 +50,12 @@ render_sidebar <- function(queue_df, selected_id, total_count = NULL) {
         tags$span(style = "color:#dc3545;margin-left:3px;", "\u274C")
       else NULL
 
+      sims <- .similar_ids(row$section_id, queue_df$section_id)
+      sim_hint <- if (length(sims) > 0)
+        tags$div(style = "font-size:0.75em;color:#fd7e14;padding-left:4px;",
+                 paste0("\u26A0 Similar: ", paste(sims, collapse = ", ")))
+      else NULL
+
       tags$div(
         style = paste0(
           "padding: 3px 4px; border-radius: 3px; cursor: pointer; ",
@@ -53,7 +64,8 @@ render_sidebar <- function(queue_df, selected_id, total_count = NULL) {
         actionLink(
           inputId = paste0("sel_", row$section_id),
           label   = tagList(display_name, flag, badge)
-        )
+        ),
+        sim_hint
       )
     })
 

@@ -21,25 +21,43 @@ list_vault_entities <- function(vault_path = VAULT_PATH) {
   result
 }
 
-merge_modal_ui <- function(vault_entities) {
-  if (nrow(vault_entities) == 0) {
-    choices <- c("No vault entities found" = "")
+list_queue_items <- function(queue_df, note_type, exclude_id = NULL) {
+  rows <- queue_df[!is.na(queue_df$note_type) & queue_df$note_type == note_type, ]
+  if (!is.null(exclude_id)) rows <- rows[rows$section_id != exclude_id, ]
+  if (nrow(rows) == 0) return(data.frame(slug = character(), name = character(),
+                                          stringsAsFactors = FALSE))
+  data.frame(
+    slug = paste0("queue:", rows$section_id),
+    name = paste0(.nc(rows$entity_name, rows$section_id), " [queue]"),
+    stringsAsFactors = FALSE
+  )
+}
+
+merge_modal_ui <- function(vault_entities, queue_items = NULL) {
+  has_queue  <- !is.null(queue_items) && nrow(queue_items) > 0
+  has_vault  <- nrow(vault_entities) > 0
+
+  vault_choices <- if (has_vault)
+    setNames(vault_entities$slug, paste0(vault_entities$name, " [", vault_entities$type, "]"))
+  else
+    c("No vault entities found" = "")
+
+  choices <- if (has_queue) {
+    queue_choices <- setNames(queue_items$slug, queue_items$name)
+    list("Pending queue items" = queue_choices, "Vault entities" = vault_choices)
   } else {
-    choices <- setNames(
-      vault_entities$slug,
-      paste0(vault_entities$name, " [", vault_entities$type, "]")
-    )
+    vault_choices
   }
 
   modalDialog(
-    title = "Merge into Existing Entity",
+    title = "Merge into Entity",
     size  = "m",
-    selectInput("merge_target", "Merge into which existing entity?",
+    selectInput("merge_target", "Merge into which entity?",
                 choices = choices, selectize = TRUE),
     uiOutput("merge_preview_ui"),
     tags$p(style = "font-size:0.82em;color:#888;margin-top:8px;",
-           "The surface form of the current entity will be registered as an alias on the target. ",
-           "This prevents re-spotting on future runs."),
+           "Queue target: combines source passages and removes this item. ",
+           "Vault target: supplements the existing note and registers an alias."),
     footer = tagList(
       modalButton("Cancel"),
       actionButton("merge_confirm_btn", "Merge", class = "btn-warning")
