@@ -18,7 +18,9 @@ library(fs)
     source_episode_ids = NA_character_,
     status_detail      = NA_character_,
     merged_into        = NA_character_,
-    last_action_at     = NA_character_
+    last_action_at     = NA_character_,
+    dismissed_findings = NA_character_,
+    slug_override      = NA_character_
   )
   for (col in names(defaults)) {
     if (!col %in% names(df)) df[[col]] <- defaults[[col]]
@@ -199,3 +201,22 @@ revert_to_pending <- function(section_id, prior_draft = NULL,
   invisible(section_id)
 }
 
+update_dismissed_findings <- function(section_id, finding_idx,
+                                       .queue_path = REVIEW_QUEUE_PATH) {
+  csv_path <- .queue_csv_path(.queue_path)
+  df  <- read_csv(csv_path, show_col_types = FALSE)
+  df  <- .fill_missing_columns(df)
+  idx <- which(df$section_id == section_id)
+  if (length(idx) == 0) stop("section_id not found: ", section_id)
+
+  current <- tryCatch(
+    fromJSON(.nc(df$dismissed_findings[idx], "[]"), simplifyVector = TRUE),
+    error = function(e) integer(0)
+  )
+  updated <- sort(unique(c(current, as.integer(finding_idx))))
+  df$dismissed_findings[idx] <- toJSON(updated, auto_unbox = FALSE)
+  df$last_action_at[idx]     <- format(Sys.time(), "%Y-%m-%dT%H:%M:%S")
+
+  write_csv(df, csv_path)
+  invisible(updated)
+}

@@ -1,6 +1,6 @@
 CAMPAIGN_FACTS_PATH <- "config/campaign_facts.md"
 
-regenerate_modal_ui <- function() {
+regenerate_modal_ui <- function(prefill = "") {
   modalDialog(
     title = "Regenerate with Feedback",
     size  = "m",
@@ -10,6 +10,7 @@ regenerate_modal_ui <- function() {
     textAreaInput(
       "regen_feedback",
       label = "Feedback (optional but encouraged)",
+      value = prefill,
       placeholder = "e.g. 'Attorrnash is female \u2014 the transcript uses he/him incorrectly'",
       width = "100%", height = "110px"
     ),

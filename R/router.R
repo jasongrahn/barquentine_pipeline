@@ -3,6 +3,8 @@ library(jsonlite)
 route_verdict <- function(verdict, confidence) {
   if (verdict == "skipped")     return("skip")
   if (verdict == "parse_error") return("enqueue")
+  if (verdict == "rejected" && !is.na(confidence) && confidence >= 0.95)
+    return("critic_reject")
   if (verdict == "rejected")    return("enqueue")
 
   if (verdict == "approved") {
@@ -67,12 +69,12 @@ dispatch_note <- function(draft, verdict_list, section_id, source_text,
     }
 
     enqueue_review(draft, combined_verdict, section_id, source_text,
-                   .queue_path = .queue_path)
+                   note_type = "session", .queue_path = .queue_path)
     return(invisible("escalated_enqueued"))
   }
 
   enqueue_review(draft, verdict_list, section_id, source_text,
-                 .queue_path = .queue_path)
+                 note_type = "session", .queue_path = .queue_path)
   invisible("enqueued")
 }
 
@@ -115,6 +117,16 @@ dispatch_entity_note <- function(draft, verdict_list, entity_id, entity_name,
   action <- route_verdict(verdict_list$verdict, verdict_list$confidence)
 
   if (action == "skip") return(invisible(NULL))
+
+  if (action == "critic_reject") {
+    enqueue_review(draft, verdict_list, entity_id, source_text,
+                   note_type = note_type, entity_name = entity_name,
+                   chunk_count = length(source_passages),
+                   source_episode_ids = ep_ids_json,
+                   status = "critic_rejected",
+                   .queue_path = .queue_path)
+    return(invisible("critic_rejected"))
+  }
 
   relative_path <- .entity_relative_path(entity_id, note_type)
 

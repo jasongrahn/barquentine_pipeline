@@ -5,15 +5,18 @@ render_sidebar <- function(queue_df, selected_id, total_count = NULL) {
   sections <- list(
     list(key = "__failed__", label = "Failed Generation", icon = "\U1F534",
          filter = function(df) df[!is.na(df$status) & df$status == "generation_failed", ]),
+    list(key = "session",   label = "Sessions",  icon = "\U1F4CB",
+         filter = function(df) df[!is.na(df$note_type) & df$note_type == "session" &
+                                    !df$status %in% c("generation_failed"), ]),
     list(key = "npc",       label = "NPCs",      icon = "\U1F465",
          filter = function(df) df[!is.na(df$note_type) & df$note_type == "npc" &
-                                    df$status != "generation_failed", ]),
+                                    !df$status %in% c("generation_failed"), ]),
     list(key = "location",  label = "Locations", icon = "\U1F4CD",
          filter = function(df) df[!is.na(df$note_type) & df$note_type == "location" &
-                                    df$status != "generation_failed", ]),
+                                    !df$status %in% c("generation_failed"), ]),
     list(key = "faction",   label = "Factions",  icon = "\U2691",
          filter = function(df) df[!is.na(df$note_type) & df$note_type == "faction" &
-                                    df$status != "generation_failed", ])
+                                    !df$status %in% c("generation_failed"), ])
   )
 
   section_tags <- lapply(sections, function(sec) {
@@ -33,7 +36,10 @@ render_sidebar <- function(queue_df, selected_id, total_count = NULL) {
                   paste0("\u00d7", row$chunk_count))
       else NULL
 
-      flag <- if (!is.na(row$verdict) && row$verdict == "flagged")
+      flag <- if (!is.na(row$status) && row$status == "critic_rejected")
+        tags$span(style = "color:#dc3545;margin-left:3px;", "\u274C",
+                  tags$span(style = "font-size:0.75em;", " Critic rejected"))
+      else if (!is.na(row$verdict) && row$verdict == "flagged")
         tags$span(style = "color:#fd7e14;margin-left:3px;", "\u26A0")
       else if (!is.na(row$status) && row$status == "generation_failed")
         tags$span(style = "color:#dc3545;margin-left:3px;", "\u274C")

@@ -1,7 +1,7 @@
 server <- function(input, output, session) {
 
-  ENTITY_STATUSES <- c("pending", "generation_failed")
-  ENTITY_TYPES    <- c("npc", "location", "faction")
+  ENTITY_STATUSES <- c("pending", "generation_failed", "critic_rejected")
+  ENTITY_TYPES    <- c("npc", "location", "faction", "session")
 
   # ---------------------------------------------------------------------------
   # State
@@ -9,7 +9,8 @@ server <- function(input, output, session) {
   queue_rv      <- reactiveVal(data.frame())
   selected_id   <- reactiveVal(NULL)
   action_msg_rv <- reactiveVal(NULL)
-  action_log_rv <- reactiveVal(list())
+  action_log_rv      <- reactiveVal(list())
+  pending_approve_rv <- reactiveVal(NULL)
 
   .confidence_badge <- function(verdict, confidence) {
     if (!is.na(confidence) && confidence < 0.50)
@@ -128,7 +129,7 @@ server <- function(input, output, session) {
   })
 
   # ---------------------------------------------------------------------------
-  # Main panel
+  # Main panel — delegates to render_dispatch.R
   # ---------------------------------------------------------------------------
   output$entity_panel <- renderUI({
     df  <- queue_rv()
@@ -142,124 +143,8 @@ server <- function(input, output, session) {
       return(p("Select an entity from the sidebar.", style = "color:#888;padding:20px;"))
     }
 
-    entity_id   <- row$section_id
-    entity_name <- .nc(row$entity_name, entity_id)
-    note_type   <- .nc(row$note_type, "npc")
-    draft_text  <- .nc(row$draft, "")
-    source_text <- .nc(row$source_text, "")
-    verdict     <- .nc(row$verdict, "")
-    confidence  <- if (is.na(row$confidence)) NA_real_ else row$confidence
-    issues      <- .parse_json_col(row$issues)
-    src_quotes  <- .parse_json_col(row$source_quotes)
-    is_failed   <- !is.na(row$status) && row$status == "generation_failed"
-    has_draft   <- nzchar(draft_text)
-
-    vault_rel  <- switch(note_type,
-      npc      = file.path("npcs",      paste0(entity_id, ".md")),
-      location = file.path("locations", paste0(entity_id, ".md")),
-      faction  = file.path("factions",  paste0(entity_id, ".md")),
-      file.path("npcs", paste0(entity_id, ".md"))
-    )
-    vault_full <- file.path(VAULT_PATH_ABS, vault_rel)
-    vault_exists <- file.exists(vault_full)
-
-    verdict_class <- switch(verdict,
-      approved = "verdict-approved", flagged = "verdict-flagged",
-      rejected = "verdict-rejected", ""
-    )
-    conf_label <- if (!is.na(confidence))
-      sprintf("%.0f%%", confidence * 100) else "?"
-
     tagList(
-      # --- Header ---
-      fluidRow(
-        column(7,
-          tags$h4(style = "margin-bottom:2px;",
-            entity_name,
-            tags$span(style = "font-size:0.65em;color:#666;font-weight:400;margin-left:8px;",
-                      toupper(note_type))
-          ),
-          tags$div(
-            style = "font-size:0.82em;color:#555;",
-            "Will be written to: ",
-            tags$code(vault_rel),
-            tags$span(style = "margin-left:8px;", render_vault_status_badge(vault_full))
-          )
-        ),
-        column(5, style = "text-align:right;padding-top:14px;",
-          tagList(
-            if (nzchar(verdict)) tags$span(class = verdict_class, paste0("Critic: ", verdict, " ")),
-            .confidence_badge(verdict, confidence)
-          )
-        )
-      ),
-      hr(style = "margin:10px 0;"),
-
-      # --- Failed generation banner ---
-      if (is_failed) tags$div(
-        style = "background:#fff3cd;border:1px solid #ffc107;border-radius:4px;padding:12px;margin-bottom:12px;",
-        tags$strong("\u26A0 Generation failed."),
-        " No draft was produced. Use ",
-        tags$strong("Regenerate"),
-        " to produce a draft, ",
-        tags$strong("Merge"),
-        " to add a session appearance to an existing entity, or ",
-        tags$strong("Reject"),
-        " to discard."
-      ),
-
-      # --- Source + Draft ---
-      if (!is_failed) fluidRow(
-        column(6,
-          tags$h6("Source Evidence"),
-          .render_source_pane(source_text, entity_name)
-        ),
-        column(6,
-          tags$h6("Draft"),
-          .render_draft_pane(draft_text, entity_id),
-          if (vault_exists && has_draft) tags$details(
-            style = "margin-top:10px;",
-            tags$summary(style = "font-size:0.82em;cursor:pointer;color:#555;",
-                         "Show vault diff \u25BC"),
-            render_vault_diff(vault_full, draft_text)
-          )
-        )
-      ),
-
-      # --- Failed state: show source only ---
-      if (is_failed) fluidRow(
-        column(12,
-          tags$h6("Source Evidence"),
-          .render_source_pane(source_text, entity_name)
-        )
-      ),
-
-      # --- Critic cards ---
-      if (!is_failed && length(issues) > 0)
-        render_critic_cards(issues, src_quotes),
-
-      hr(style = "margin:12px 0;"),
-
-      # --- Action bar ---
-      tags$div(
-        class = "action-bar",
-        if (!is_failed) {
-          tagList(
-            actionButton("approve_btn", "Approve", class = "btn-success btn-sm",
-                         disabled = if (!has_draft) "disabled" else NULL),
-            actionButton("edit_approve_btn", "Edit & Approve", class = "btn-warning btn-sm",
-                         disabled = if (!has_draft) "disabled" else NULL),
-            if (!has_draft) tags$span(style = "font-size:0.8em;color:#dc3545;margin-right:8px;",
-                                       "Draft empty \u2014 Regenerate first")
-          )
-        },
-        actionButton("regen_btn",  "Regenerate",      class = "btn-info btn-sm"),
-        actionButton("merge_btn",  "Merge into\u2026", class = "btn-secondary btn-sm"),
-        actionButton("reject_btn", "Reject \u25BE",    class = "btn-danger btn-sm"),
-        actionButton("skip_btn",   "Skip",             class = "btn-outline-secondary btn-sm")
-      ),
-
-      # --- Status message ---
+      render_review_pane(row),
       uiOutput("action_msg_ui")
     )
   })
@@ -328,16 +213,51 @@ server <- function(input, output, session) {
   }
 
   # ---------------------------------------------------------------------------
-  # Approve (unified — handles both Preview and Edit tabs)
+  # Approve — shows rename modal for entity types; writes directly for sessions
   # ---------------------------------------------------------------------------
+  .resolve_write <- function(row, draft, resolution, vault_rel) {
+    ep_ids <- tryCatch(
+      fromJSON(.nc(row$source_episode_ids, "[]"), simplifyVector = TRUE),
+      error = function(e) character(0)
+    )
+    note_type <- .nc(row$note_type, "npc")
+    content <- tryCatch({
+      if (note_exists(vault_rel, dry_run = DRY_RUN,
+                       .vault_path = VAULT_PATH_ABS, .dry_run_path = DRY_RUN_PATH)) {
+        existing <- paste(readLines(
+          get_output_path(vault_rel, dry_run = DRY_RUN,
+                          .vault_path = VAULT_PATH_ABS, .dry_run_path = DRY_RUN_PATH),
+          warn = FALSE), collapse = "\n")
+        ep_id <- if (length(ep_ids) > 0) ep_ids[[1]] else row$section_id
+        supplement_note(existing, draft, ep_id, note_type)
+      } else draft
+    }, error = function(e) draft)
+
+    write_note(content, vault_rel, dry_run = DRY_RUN, overwrite = TRUE,
+               .vault_path = VAULT_PATH_ABS, .dry_run_path = DRY_RUN_PATH)
+    resolve_item(row$section_id, resolution,
+                 edited_draft = if (resolution == "accepted_with_edit") draft else NULL,
+                 .queue_path = QUEUE_PATH_ABS)
+    .log_action(row$section_id, .nc(row$entity_name, row$section_id), resolution,
+                prior_draft = .nc(row$draft, ""))
+    action_msg_rv(list(
+      text  = paste0("\u2714 ",
+                     if (resolution == "accepted_with_edit") "Approved with edits" else "Approved",
+                     ": ", row$section_id),
+      color = "#28a745"
+    ))
+    .advance()
+  }
+
   observeEvent(input$approve_btn, {
     row <- current_row()
     if (is.null(row)) return()
 
     tab       <- .nc(input$draft_tabs, "Preview")
     entity_id <- row$section_id
+    note_type <- .nc(row$note_type, "npc")
 
-    draft <- if (tab == "Edit") {
+    draft <- if (tab %in% c("Edit", "Raw markdown")) {
       ed <- .nc(input[[paste0("draft_edit_", entity_id)]], "")
       if (!nzchar(trimws(ed))) {
         action_msg_rv(list(text = "Edited draft is empty.", color = "#dc3545"))
@@ -345,7 +265,7 @@ server <- function(input, output, session) {
       }
       if (trimws(ed) == trimws(.nc(row$draft, ""))) {
         action_msg_rv(list(
-          text  = "No changes detected. Edit the text first, or switch to Preview to approve as-is.",
+          text  = "No changes detected. Edit the text first, or switch to approve as-is.",
           color = "#fd7e14"
         ))
         return()
@@ -360,55 +280,126 @@ server <- function(input, output, session) {
       d
     }
 
-    resolution <- if (tab == "Edit") "accepted_with_edit" else "accepted"
-    note_type  <- .nc(row$note_type, "npc")
-    vault_rel  <- switch(note_type,
-      npc      = file.path("npcs",      paste0(entity_id, ".md")),
-      location = file.path("locations", paste0(entity_id, ".md")),
-      faction  = file.path("factions",  paste0(entity_id, ".md")),
-      file.path("npcs", paste0(entity_id, ".md"))
-    )
-    ep_ids <- tryCatch(
-      fromJSON(.nc(row$source_episode_ids, "[]"), simplifyVector = TRUE),
-      error = function(e) character(0)
-    )
-    content <- tryCatch({
-      if (note_exists(vault_rel, dry_run = DRY_RUN,
-                       .vault_path = VAULT_PATH_ABS, .dry_run_path = DRY_RUN_PATH)) {
-        existing <- paste(readLines(
-          get_output_path(vault_rel, dry_run = DRY_RUN,
-                          .vault_path = VAULT_PATH_ABS, .dry_run_path = DRY_RUN_PATH),
-          warn = FALSE), collapse = "\n")
-        ep_id <- if (length(ep_ids) > 0) ep_ids[[1]] else entity_id
-        supplement_note(existing, draft, ep_id, note_type)
-      } else draft
-    }, error = function(e) draft)
+    resolution <- if (tab %in% c("Edit", "Raw markdown")) "accepted_with_edit" else "accepted"
 
-    tryCatch({
-      write_note(content, vault_rel, dry_run = DRY_RUN, overwrite = TRUE,
-                 .vault_path = VAULT_PATH_ABS, .dry_run_path = DRY_RUN_PATH)
-      resolve_item(entity_id, resolution,
-                   edited_draft = if (tab == "Edit") draft else NULL,
-                   .queue_path = QUEUE_PATH_ABS)
-      .log_action(entity_id, .nc(row$entity_name, entity_id), resolution,
-                  prior_draft = .nc(row$draft, ""))
-      action_msg_rv(list(
-        text  = paste0("\u2714 ", if (tab == "Edit") "Approved with edits" else "Approved",
-                       ": ", entity_id),
-        color = "#28a745"
-      ))
-      .advance()
-    }, error = function(e) {
-      action_msg_rv(list(text = paste0("Error: ", conditionMessage(e)), color = "#dc3545"))
-    })
+    if (note_type == "session") {
+      vault_rel <- file.path("sessions", paste0(entity_id, ".md"))
+      tryCatch(
+        .resolve_write(row, draft, resolution, vault_rel),
+        error = function(e) action_msg_rv(list(
+          text = paste0("Error: ", conditionMessage(e)), color = "#dc3545"))
+      )
+    } else {
+      pending_approve_rv(list(row = row, draft = draft, resolution = resolution))
+      entity_name <- .nc(row$entity_name, entity_id)
+      showModal(rename_modal_ui(entity_id, entity_name, note_type, VAULT_PATH_ABS))
+    }
+  })
+
+  # Rename modal: auto-derive slug from display name
+  observeEvent(input$rename_derive_slug, {
+    display_name <- trimws(.nc(input$rename_display_name, ""))
+    if (nzchar(display_name)) {
+      updateTextInput(session, "rename_slug", value = make_slug(display_name))
+    }
+  })
+
+  output$rename_vault_path_preview <- renderUI({
+    pending <- pending_approve_rv()
+    if (is.null(pending)) return(NULL)
+    slug      <- trimws(.nc(input$rename_slug, ""))
+    note_type <- .nc(pending$row$note_type, "npc")
+    sub_dir   <- switch(note_type, npc = "npcs", location = "locations",
+                         faction = "factions", "npcs")
+    err <- if (nzchar(slug))
+      validate_rename_slug(slug, note_type, VAULT_PATH_ABS)
+    else NULL
+
+    if (!is.null(err)) {
+      tags$p(style = "color:#dc3545;font-size:0.85em;", err)
+    } else if (nzchar(slug)) {
+      tags$p(style = "font-size:0.85em;color:#555;",
+             "Will write to: ",
+             tags$code(file.path(sub_dir, paste0(slug, ".md"))))
+    }
+  })
+
+  observeEvent(input$rename_confirm_btn, {
+    removeModal()
+    pending <- pending_approve_rv()
+    if (is.null(pending)) return()
+    pending_approve_rv(NULL)
+
+    row       <- pending$row
+    draft     <- pending$draft
+    resolution <- pending$resolution
+    note_type <- .nc(row$note_type, "npc")
+    slug      <- trimws(.nc(input$rename_slug, row$section_id))
+    sub_dir   <- switch(note_type, npc = "npcs", location = "locations",
+                         faction = "factions", "npcs")
+    vault_rel <- file.path(sub_dir, paste0(slug, ".md"))
+
+    err <- validate_rename_slug(slug, note_type, VAULT_PATH_ABS)
+    if (!is.null(err)) {
+      action_msg_rv(list(text = paste0("Slug error: ", err), color = "#dc3545"))
+      return()
+    }
+
+    # If slug changed, update the queue row's slug_override
+    if (slug != row$section_id) {
+      tryCatch({
+        csv_path <- file.path(QUEUE_PATH_ABS, "queue.csv")
+        df  <- read_csv(csv_path, show_col_types = FALSE)
+        df  <- .fill_missing_columns(df)
+        idx <- which(df$section_id == row$section_id)
+        if (length(idx) > 0) {
+          df$slug_override[idx] <- slug
+          write_csv(df, csv_path)
+        }
+      }, error = function(e) NULL)
+    }
+
+    tryCatch(
+      .resolve_write(row, draft, resolution, vault_rel),
+      error = function(e) action_msg_rv(list(
+        text = paste0("Error: ", conditionMessage(e)), color = "#dc3545"))
+    )
   })
 
   # ---------------------------------------------------------------------------
-  # Edit & Approve — switch to Edit tab
+  # Edit & Approve — switch to Edit/Raw markdown tab
   # ---------------------------------------------------------------------------
   observeEvent(input$edit_approve_btn, {
-    updateTabsetPanel(session, "draft_tabs", selected = "Edit")
+    row <- current_row()
+    note_type <- if (!is.null(row)) .nc(row$note_type, "npc") else "npc"
+    tab_name  <- if (note_type %in% c("npc", "location", "faction")) "Raw markdown" else "Edit"
+    updateTabsetPanel(session, "draft_tabs", selected = tab_name)
     action_msg_rv(list(text = "Edit the draft above, then click Approve.", color = "#555"))
+  })
+
+  # ---------------------------------------------------------------------------
+  # Dynamic finding observers (dismiss / address-via-regenerate)
+  # ---------------------------------------------------------------------------
+  observe({
+    row <- current_row()
+    if (is.null(row)) return()
+    issues <- .parse_json_col(row$issues)
+    if (length(issues) == 0) return()
+    lapply(seq_along(issues), function(i) {
+      local({
+        idx        <- i
+        issue_text <- as.character(issues[[idx]])
+        observeEvent(input[[paste0("finding_dismiss_", idx)]], {
+          tryCatch({
+            update_dismissed_findings(row$section_id, idx, .queue_path = QUEUE_PATH_ABS)
+            .reload_queue()
+          }, error = function(e) NULL)
+        }, ignoreInit = TRUE, once = TRUE)
+        observeEvent(input[[paste0("finding_address_", idx)]], {
+          showModal(regenerate_modal_ui(prefill = issue_text))
+        }, ignoreInit = TRUE, once = TRUE)
+      })
+    })
   })
 
   # ---------------------------------------------------------------------------
