@@ -3,10 +3,12 @@
   if (!length(candidates) || nchar(section_id) < 3L) return(character(0))
   candidates <- candidates[nchar(candidates) >= 3L]
   if (!length(candidates)) return(character(0))
+  section_id_lc <- tolower(section_id)
+  candidates_lc <- tolower(candidates)
   # prefix/suffix OR substring containment — catches "captain" / "the_captain"
-  prefix_match    <- startsWith(section_id, candidates) | startsWith(candidates, section_id)
-  substring_match <- grepl(section_id, candidates, fixed = TRUE) |
-                     grepl(candidates, section_id, fixed = TRUE)
+  prefix_match    <- startsWith(section_id_lc, candidates_lc) | startsWith(candidates_lc, section_id_lc)
+  substring_match <- grepl(section_id_lc, candidates_lc, fixed = TRUE) |
+                     grepl(candidates_lc, section_id_lc, fixed = TRUE)
   candidates[prefix_match | substring_match]
 }
 

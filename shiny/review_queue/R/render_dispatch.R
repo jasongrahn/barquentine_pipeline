@@ -23,11 +23,39 @@ render_action_bar <- function(row, is_rejected = FALSE) {
 
 render_review_pane <- function(row) {
   note_type <- .nc(row$note_type, "npc")
-  switch(note_type,
-    session  = render_session_review(row),
-    npc      = render_npc_review(row),
-    location = render_location_review(row),
-    faction  = render_faction_review(row),
-    render_npc_review(row)
+  tryCatch(
+    switch(note_type,
+      session  = render_session_review(row),
+      npc      = render_npc_review(row),
+      location = render_location_review(row),
+      faction  = render_faction_review(row),
+      render_npc_review(row)
+    ),
+    error = function(e) {
+      err_msg   <- conditionMessage(e)
+      entity_id <- .nc(row$section_id, "unknown")
+      message("render_review_pane error [", note_type, "]: ", err_msg)
+      tagList(
+        tags$div(
+          class = "alert alert-warning",
+          style = "margin-bottom:12px;",
+          tags$strong("Renderer error \u2014 showing fallback view."),
+          tags$br(),
+          tags$code(err_msg)
+        ),
+        fluidRow(
+          column(6,
+            tags$h6("Source"),
+            .render_source_pane(.nc(row$source_text, ""), .nc(row$entity_name, entity_id))
+          ),
+          column(6,
+            tags$h6("Draft"),
+            .render_draft_pane(.nc(row$draft, ""), entity_id)
+          )
+        ),
+        hr(style = "margin:12px 0;"),
+        render_action_bar(row)
+      )
+    }
   )
 }
