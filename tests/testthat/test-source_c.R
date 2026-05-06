@@ -278,3 +278,97 @@ test_that("extract_relevant_sentences clamps window to passage boundaries", {
   expect_true(grepl("Attorrnash", result))
   expect_true(nzchar(result))
 })
+
+# ---- exclusion list ----
+
+test_that("load_entity_exclusions returns character(0) for missing file", {
+  expect_equal(load_entity_exclusions("/nonexistent/path.csv"), character(0))
+})
+
+test_that("load_entity_exclusions returns slug values from CSV", {
+  f <- withr::local_tempfile(fileext = ".csv")
+  writeLines("slug,reason\nthe_admiral,narrator tag\nthe_dm_voice,narrator", f)
+  result <- load_entity_exclusions(f)
+  expect_setequal(result, c("the_admiral", "the_dm_voice"))
+})
+
+test_that("aggregate_entity_passages drops excluded slug even above frequency threshold", {
+  assign("resolve_alias", function(...) NULL, envir = globalenv())
+  on.exit(rm("resolve_alias", envir = globalenv()), add = TRUE)
+
+  file1 <- list(
+    episode_id = "S2e34",
+    npcs       = list("the admiral" = list("c1", "c2", "c3", "c4")),
+    locations  = list(), items = list(), factions = list()
+  )
+  result <- aggregate_entity_passages(list(file1), list(),
+                                      min_chunks = 3L,
+                                      exclusion_slugs = "the_admiral")
+  slugs <- vapply(result, `[[`, character(1), "entity_id")
+  expect_false("the_admiral" %in% slugs)
+})
+
+test_that("aggregate_entity_passages keeps non-excluded slug when exclusion list is set", {
+  assign("resolve_alias", function(...) NULL, envir = globalenv())
+  on.exit(rm("resolve_alias", envir = globalenv()), add = TRUE)
+
+  file1 <- list(
+    episode_id = "S2e34",
+    npcs       = list(
+      "the admiral" = list("c1", "c2", "c3"),
+      "Attorrnash"  = list("c1", "c2", "c3")
+    ),
+    locations = list(), items = list(), factions = list()
+  )
+  result <- aggregate_entity_passages(list(file1), list(),
+                                      min_chunks = 3L,
+                                      exclusion_slugs = "the_admiral")
+  slugs <- vapply(result, `[[`, character(1), "entity_id")
+  expect_true("attorrnash" %in% slugs)
+  expect_false("the_admiral" %in% slugs)
+})
+
+# ---- protected entities ----
+
+test_that("load_protected_slugs returns character(0) for missing file", {
+  expect_equal(load_protected_slugs("/nonexistent/path.csv"), character(0))
+})
+
+test_that("load_protected_slugs returns slug values from CSV", {
+  f <- withr::local_tempfile(fileext = ".csv")
+  writeLines("slug,canonical_name,note_type\nbasil,Basil,npc\nlumi,Lumi,npc", f)
+  result <- load_protected_slugs(f)
+  expect_setequal(result, c("basil", "lumi"))
+})
+
+test_that("aggregate_entity_passages keeps protected slug below min_chunks threshold", {
+  assign("resolve_alias", function(...) NULL, envir = globalenv())
+  on.exit(rm("resolve_alias", envir = globalenv()), add = TRUE)
+
+  file1 <- list(
+    episode_id = "S2e34",
+    npcs       = list("Basil" = list("c1", "c2")),  # only 2 chunks
+    locations  = list(), items = list(), factions = list()
+  )
+  result <- aggregate_entity_passages(list(file1), list(),
+                                      min_chunks = 3L,
+                                      protected_slugs = "basil")
+  slugs <- vapply(result, `[[`, character(1), "entity_id")
+  expect_true("basil" %in% slugs)
+})
+
+test_that("aggregate_entity_passages still drops non-protected slug below threshold", {
+  assign("resolve_alias", function(...) NULL, envir = globalenv())
+  on.exit(rm("resolve_alias", envir = globalenv()), add = TRUE)
+
+  file1 <- list(
+    episode_id = "S2e34",
+    npcs       = list("Rando" = list("c1", "c2")),  # only 2 chunks, not protected
+    locations  = list(), items = list(), factions = list()
+  )
+  result <- aggregate_entity_passages(list(file1), list(),
+                                      min_chunks = 3L,
+                                      protected_slugs = "basil")
+  slugs <- vapply(result, `[[`, character(1), "entity_id")
+  expect_false("rando" %in% slugs)
+})

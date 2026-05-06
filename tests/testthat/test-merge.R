@@ -259,3 +259,15 @@ test_that("supplement_note falls back to appending at end when Session Appearanc
   result <- supplement_note(note_no_section, note_no_section, "S2e38", "npc")
   expect_true(grepl("[[S2e38]]", result, fixed = TRUE))
 })
+
+test_that("supplement_note with empty existing_text returns new_content directly", {
+  new <- .make_npc_note("alive")
+  result <- supplement_note("", new, "S2e38", "npc")
+  expect_equal(result, new)
+})
+
+test_that("supplement_note with whitespace-only existing_text returns new_content directly", {
+  new <- .make_npc_note("alive")
+  result <- supplement_note("   \n  ", new, "S2e38", "npc")
+  expect_equal(result, new)
+})

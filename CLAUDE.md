@@ -43,7 +43,7 @@ The pipeline flows in five phases defined in `_targets.R`:
    - `flagged` + confidence < 0.60 → Claude escalation tiebreak
    - `flagged`/`rejected` → review queue
 
-4. **Review queue + Shiny UI** (`R/queue.R`, `shiny/app.R`) — Pending items land in `review_queue/queue.csv`. The Shiny app (port 7474) shows source vs. draft side-by-side with critic issues and supporting quotes. Reviewers accept, accept-with-edit, or reject.
+4. **Review queue + Shiny UI** (`R/queue.R`, `shiny/app.R`) — Pending items land in `review_queue/queue.csv`. The Shiny app (port 7474) shows source (read-only) and draft (editable textarea) side-by-side; critic issues with inline supporting quotes appear below. "Accept as Written" uses the original draft; "Accept with Edits" uses the edited textarea and requires actual changes (warns if unchanged). Entity notes are checked against `config/entity_exclusions.csv` (DM narrator role tags to drop) before passage aggregation; known PCs/key NPCs in `config/protected_entities.csv` bypass the chunk-frequency filter. The alias registry is seeded from `config/entity_aliases.csv` (unambiguous name variants → canonical slug) before scanning vault YAML; vault YAML takes precedence on collision.
 
 5. **Training data capture** (`R/training.R`) — Accepted-as-is → `training_data/sft.jsonl`; accepted-with-edit → `training_data/dpo.jsonl` (chosen/rejected pair); rejected → negative examples.
 
@@ -67,6 +67,9 @@ Never swap generator and critic models without explicit instruction.
 | `CRITIC_AUTO_APPROVE_THRESHOLD` | Confidence ≥ this → auto-approve (default 0.85) |
 | `CRITIC_ESCALATE_THRESHOLD` | Confidence < this AND flagged → Claude escalation (default 0.60) |
 | `OLLAMA_MODEL` / `OLLAMA_CRITIC_MODEL` | Model names — must match what Ollama has pulled |
+| `ENTITY_EXCLUSIONS_PATH` | CSV of slugs to drop from entity note generation (DM narrator role tags) |
+| `PROTECTED_ENTITIES_PATH` | CSV of known PCs/key NPCs that bypass the frequency filter |
+| `ENTITY_ALIASES_PATH` | CSV bootstrap for alias registry before vault notes exist (unambiguous name variants only) |
 
 `ANTHROPIC_API_KEY` lives in `~/.Renviron`, never in the repo. Google Drive auth is cached in the OS keychain via `googledrive::drive_auth()`.
 

@@ -2,9 +2,31 @@ library(fs)
 library(yaml)
 library(stringr)
 library(purrr)
+library(readr)
 
-build_alias_registry <- function(vault_path = VAULT_PATH) {
+.load_csv_aliases <- function(path = ENTITY_ALIASES_PATH) {
+  if (is.null(path) || !file.exists(path)) return(list())
+  df <- read_csv(path, show_col_types = FALSE)
+  required <- c("alias", "canonical_slug")
+  if (!all(required %in% names(df))) return(list())
+
   registry <- list()
+  for (i in seq_len(nrow(df))) {
+    alias <- df$alias[i]
+    slug  <- df$canonical_slug[i]
+    if (is.na(alias) || !nzchar(alias)) next
+    if (is.na(slug)  || !nzchar(slug))  next
+    display <- if ("display_as" %in% names(df) &&
+                   !is.na(df$display_as[i]) &&
+                   nzchar(df$display_as[i])) df$display_as[i] else NULL
+    registry[[alias]] <- list(slug = slug, display = display)
+  }
+  registry
+}
+
+build_alias_registry <- function(vault_path = VAULT_PATH,
+                                  aliases_path = ENTITY_ALIASES_PATH) {
+  registry <- .load_csv_aliases(aliases_path)
 
   for (subdir in c("pcs", "npcs")) {
     dir_path <- path(vault_path, subdir)

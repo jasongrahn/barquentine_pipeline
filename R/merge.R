@@ -44,7 +44,7 @@ append_to_section <- function(note_text, section_header, new_content) {
 .parse_frontmatter <- function(note_text) {
   m <- str_match(note_text, "(?s)^---\n(.*?)\n---")
   if (is.na(m[1, 1])) return(list())
-  read_yaml(text = m[1, 2])
+  tryCatch(read_yaml(text = m[1, 2]), error = function(e) list())
 }
 
 merge_note <- function(existing_text, incoming_text, source, dry_run = DRY_RUN) {
@@ -79,6 +79,7 @@ merge_note <- function(existing_text, incoming_text, source, dry_run = DRY_RUN) 
 }
 
 supplement_note <- function(existing_text, new_content, source_id, note_type) {
+  if (nchar(trimws(existing_text)) == 0L) return(new_content)
   merged <- merge_note(existing_text, new_content, source = source_id)
 
   session_link <- paste0("- [[", source_id, "]]")

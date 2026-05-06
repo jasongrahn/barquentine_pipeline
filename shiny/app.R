@@ -35,6 +35,8 @@ ui <- fluidPage(
     .verdict-escalated { color: #6f42c1; font-weight: bold; }
     .action-bar { margin-top: 12px; }
     .action-bar .btn { margin-right: 6px; }
+    .critic-panel { background: #fff8e1; border-left: 3px solid #fd7e14;
+                    padding: 8px 12px; margin: 8px 0; }
   "))),
 
   titlePanel("Barquentine — Review Queue"),
@@ -138,18 +140,6 @@ server <- function(input, output, session) {
         )
       ),
 
-      if (length(issues) > 0) tagList(
-        h5("Issues:"),
-        tags$ul(lapply(issues, function(i) tags$li(as.character(i))))
-      ),
-
-      if (length(source_quotes) > 0) tagList(
-        h5("Supporting quotes:"),
-        tags$ul(lapply(source_quotes, function(q) tags$li(tags$em(as.character(q)))))
-      ),
-
-      hr(),
-
       fluidRow(
         column(6,
           h5("Source Text"),
@@ -157,23 +147,35 @@ server <- function(input, output, session) {
                    null_coalesce(row$source_text, ""))
         ),
         column(6,
-          h5("Draft"),
-          tags$pre(style = "max-height: 380px; overflow-y: auto; background: #f8f9fa; padding: 8px;",
-                   null_coalesce(row$draft, "(no draft)"))
+          h5("Draft — edit below if needed:"),
+          textAreaInput("edited_draft", label = NULL,
+                        value = null_coalesce(row$draft, ""),
+                        width = "100%", height = "380px")
         )
       ),
 
-      hr(),
-      h5("Edit Draft (optional — fill in to Accept with Edit):"),
-      textAreaInput("edited_draft", label = NULL,
-                    value = null_coalesce(row$draft, ""),
-                    width = "100%", height = "250px"),
+      if (length(issues) > 0 || length(source_quotes) > 0) tags$div(
+        class = "critic-panel",
+        h5("Critic analysis:"),
+        tags$ul(
+          lapply(seq_along(issues), function(i) {
+            quote_text <- if (i <= length(source_quotes)) {
+              tags$span(style = "font-style: italic; color: #666; margin-left: 8px;",
+                        paste0("\u201c", source_quotes[[i]], "\u201d"))
+            } else NULL
+            tags$li(as.character(issues[[i]]), quote_text)
+          }),
+          if (length(source_quotes) > length(issues))
+            lapply(source_quotes[seq(length(issues) + 1L, length(source_quotes))],
+                   function(q) tags$li(tags$em(as.character(q))))
+        )
+      ),
 
       tags$div(
         class = "action-bar",
-        actionButton("accept_btn",      "Accept",             class = "btn-success btn-sm"),
-        actionButton("accept_edit_btn", "Accept with Edit",   class = "btn-warning btn-sm"),
-        actionButton("reject_btn",      "Reject",             class = "btn-danger  btn-sm")
+        actionButton("accept_btn",      "Accept as Written", class = "btn-success btn-sm"),
+        actionButton("accept_edit_btn", "Accept with Edits", class = "btn-warning btn-sm"),
+        actionButton("reject_btn",      "Reject",            class = "btn-danger  btn-sm")
       ),
 
       uiOutput("action_msg")
@@ -221,8 +223,18 @@ server <- function(input, output, session) {
   })
 
   observeEvent(input$accept_edit_btn, {
-    row    <- .current_row()
-    edited <- input$edited_draft
+    row      <- .current_row()
+    edited   <- input$edited_draft
+    original <- null_coalesce(row$draft, "")
+
+    if (trimws(edited) == trimws(original)) {
+      output$action_msg <- renderUI(
+        tags$p(style = "color: #dc3545;",
+               "No edits detected — textarea matches original draft. Use 'Accept as Written' instead, or make edits first.")
+      )
+      return(invisible(NULL))
+    }
+
     resolve_item(row$section_id, "accepted_with_edit", edited_draft = edited,
                  .queue_path = QUEUE_PATH_ABS)
     if (nzchar(trimws(edited))) {

@@ -30,6 +30,20 @@ ENTITY_SPOT_SYSTEM_PROMPT <- paste(
   sep = "\n"
 )
 
+load_entity_exclusions <- function(path = ENTITY_EXCLUSIONS_PATH) {
+  if (!file.exists(path)) return(character(0))
+  df <- read_csv(path, show_col_types = FALSE)
+  if (!"slug" %in% names(df)) return(character(0))
+  df$slug[!is.na(df$slug) & nzchar(df$slug)]
+}
+
+load_protected_slugs <- function(path = PROTECTED_ENTITIES_PATH) {
+  if (!file.exists(path)) return(character(0))
+  df <- read_csv(path, show_col_types = FALSE)
+  if (!"slug" %in% names(df)) return(character(0))
+  df$slug[!is.na(df$slug) & nzchar(df$slug)]
+}
+
 load_vtt_registry <- function(registry_path = "config/vtt_registry.csv",
                               active_episodes = ACTIVE_EPISODES) {
   df <- read_csv(registry_path, show_col_types = FALSE)
@@ -117,7 +131,9 @@ extract_relevant_sentences <- function(passage, entity_name, window = 2L) {
 }
 
 aggregate_entity_passages <- function(vtt_file_results, alias_registry,
-                                      min_chunks = MIN_ENTITY_CHUNK_COUNT) {
+                                      min_chunks = MIN_ENTITY_CHUNK_COUNT,
+                                      exclusion_slugs = character(0),
+                                      protected_slugs = character(0)) {
   type_to_note <- c(npcs = "npc", locations = "location", factions = "faction")
   acc <- list()
 
@@ -133,6 +149,8 @@ aggregate_entity_passages <- function(vtt_file_results, alias_registry,
         slug   <- resolve_alias(name, alias_registry)
         if (is.null(slug)) slug <- make_slug(name)
         if (is.list(slug)) slug <- slug$slug
+
+        if (slug %in% exclusion_slugs) next
 
         if (is.null(acc[[slug]])) {
           acc[[slug]] <- list(
@@ -163,7 +181,7 @@ aggregate_entity_passages <- function(vtt_file_results, alias_registry,
   })
 
   records <- Filter(function(rec) {
-    if (length(rec$source_passages) >= min_chunks) {
+    if (length(rec$source_passages) >= min_chunks || rec$entity_id %in% protected_slugs) {
       kept <<- kept + 1L
       TRUE
     } else {
