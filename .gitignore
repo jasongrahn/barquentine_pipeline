@@ -50,6 +50,6 @@ po/*~
 rsconnect/
 R/.claude/
 
-# Phase 2 runtime directories (local only)
-review_queue/
+# Phase 2 runtime directories (local only, not source code)
+/review_queue/
 training_data/

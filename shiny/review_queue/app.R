@@ -1,0 +1,152 @@
+library(shiny)
+library(shinyjs)
+library(readr)
+library(jsonlite)
+library(stringr)
+library(fs)
+library(yaml)
+library(commonmark)
+
+# shiny::runApp("shiny/review_queue") sets wd to shiny/review_queue/
+PROJECT_ROOT <- normalizePath(file.path(getwd(), "../.."))
+setwd(PROJECT_ROOT)
+
+source("config.R")
+source("R/queue.R")
+source("R/writer.R")
+source("R/merge.R")
+source("R/wikilinks.R")
+source("R/extract.R")
+source("R/critic.R")
+source("R/ollama.R")
+source("R/claude.R")
+source("shiny/review_queue/R/sidebar.R")
+source("shiny/review_queue/R/critic_card.R")
+source("shiny/review_queue/R/diff_view.R")
+source("shiny/review_queue/R/regenerate.R")
+source("shiny/review_queue/R/merge_action.R")
+
+QUEUE_PATH_ABS <- file.path(PROJECT_ROOT, REVIEW_QUEUE_PATH)
+VAULT_PATH_ABS <- VAULT_PATH  # already absolute in config.R
+
+.nc <- function(x, default = "") if (is.null(x) || (length(x) == 1 && is.na(x))) default else x
+
+.parse_json_col <- function(x) {
+  tryCatch(fromJSON(.nc(x, "[]"), simplifyVector = FALSE), error = function(e) list())
+}
+
+.entity_vault_path <- function(entity_id, note_type, vault_path = VAULT_PATH_ABS) {
+  sub_dir <- switch(note_type,
+    npc      = "npcs",
+    location = "locations",
+    faction  = "factions",
+    "npcs"
+  )
+  file.path(vault_path, sub_dir, paste0(entity_id, ".md"))
+}
+
+.highlight_entity <- function(text, entity_name) {
+  if (!nzchar(trimws(entity_name))) return(text)
+  pattern <- paste0("(?i)(", str_escape(entity_name), ")")
+  gsub(pattern, "<mark>\\1</mark>", text, perl = TRUE)
+}
+
+.render_source_pane <- function(source_text, entity_name) {
+  passages <- str_split(source_text, "\n\n---\n\n")[[1]]
+  passage_tags <- lapply(seq_along(passages), function(i) {
+    highlighted <- .highlight_entity(passages[[i]], entity_name)
+    tags$div(
+      style = "margin-bottom: 14px;",
+      tags$div(
+        style = "font-size:0.75em;color:#888;font-weight:600;margin-bottom:2px;",
+        paste0("[Chunk ", i, "]")
+      ),
+      tags$div(
+        style = "font-size:0.87em;line-height:1.5;",
+        HTML(highlighted)
+      )
+    )
+  })
+  tags$div(
+    style = "max-height:420px;overflow-y:auto;padding:8px;background:#f8f9fa;border-radius:4px;",
+    tagList(passage_tags)
+  )
+}
+
+.render_draft_pane <- function(draft_text, entity_id) {
+  safe_draft <- .nc(draft_text, "")
+  html_preview <- if (nzchar(safe_draft)) {
+    tryCatch(markdown_html(safe_draft), error = function(e) paste0("<pre>", safe_draft, "</pre>"))
+  } else {
+    "<p style='color:#999;font-style:italic;'>Draft is empty — use Regenerate to produce one.</p>"
+  }
+
+  tabsetPanel(
+    id = "draft_tabs",
+    tabPanel("Preview",
+      tags$div(
+        style = "max-height:420px;overflow-y:auto;padding:10px;border:1px solid #dee2e6;border-radius:4px;margin-top:8px;",
+        HTML(html_preview)
+      )
+    ),
+    tabPanel("Edit",
+      tags$div(style = "margin-top:8px;",
+        textAreaInput(paste0("draft_edit_", entity_id), label = NULL,
+                      value = safe_draft, width = "100%", height = "380px")
+      )
+    )
+  )
+}
+
+ui <- fluidPage(
+  useShinyjs(),
+  tags$head(tags$style(HTML("
+    body { font-size: 14px; }
+    .sidebar-panel { padding-top: 8px; }
+    .action-bar .btn { margin-right: 6px; margin-bottom: 6px; }
+    .verdict-approved  { color: #28a745; font-weight: bold; }
+    .verdict-flagged   { color: #fd7e14; font-weight: bold; }
+    .verdict-rejected  { color: #dc3545; font-weight: bold; }
+    .verdict-escalated { color: #6f42c1; font-weight: bold; }
+    details > summary { list-style: none; }
+    details > summary::-webkit-details-marker { display: none; }
+    mark { background: #fff3cd; padding: 0 1px; border-radius: 2px; }
+    .confidence-bar {
+      height: 6px; border-radius: 3px; background: #e9ecef; margin-top: 4px;
+    }
+  "))),
+
+  titlePanel("Barquentine \u2014 Entity Review Queue"),
+
+  sidebarLayout(
+    sidebarPanel(
+      width = 3,
+      class = "sidebar-panel",
+
+      fluidRow(
+        column(6, actionButton("refresh_btn", "Refresh", class = "btn-sm btn-outline-secondary",
+                               icon = icon("sync"), width = "100%")),
+        column(6, tags$div(style = "padding-top:4px;",
+                           textOutput("progress_text")))
+      ),
+      tags$div(id = "progress_bar_container",
+        style = "height:6px;background:#e9ecef;border-radius:3px;margin:6px 0 10px;",
+        tags$div(id = "progress_bar_fill",
+                 style = "height:6px;background:#28a745;border-radius:3px;width:0%;")
+      ),
+      textInput("search_box", label = NULL, placeholder = "\U1F50D Search entities\u2026",
+                width = "100%"),
+      hr(style = "margin:6px 0;"),
+      uiOutput("sidebar_content")
+    ),
+
+    mainPanel(
+      width = 9,
+      uiOutput("entity_panel")
+    )
+  )
+)
+
+source(file.path(PROJECT_ROOT, "shiny/review_queue/server.R"))
+
+shinyApp(ui, server)
