@@ -1,6 +1,13 @@
 .similar_ids <- function(section_id, all_ids) {
   candidates <- setdiff(all_ids, section_id)
-  candidates[startsWith(section_id, candidates) | startsWith(candidates, section_id)]
+  if (!length(candidates) || nchar(section_id) < 3L) return(character(0))
+  candidates <- candidates[nchar(candidates) >= 3L]
+  if (!length(candidates)) return(character(0))
+  # prefix/suffix OR substring containment — catches "captain" / "the_captain"
+  prefix_match    <- startsWith(section_id, candidates) | startsWith(candidates, section_id)
+  substring_match <- grepl(section_id, candidates, fixed = TRUE) |
+                     grepl(candidates, section_id, fixed = TRUE)
+  candidates[prefix_match | substring_match]
 }
 
 render_sidebar <- function(queue_df, selected_id, total_count = NULL) {

@@ -41,7 +41,20 @@ load_protected_slugs <- function(path = PROTECTED_ENTITIES_PATH) {
   if (!file.exists(path)) return(character(0))
   df <- read_csv(path, show_col_types = FALSE)
   if (!"slug" %in% names(df)) return(character(0))
-  df$slug[!is.na(df$slug) & nzchar(df$slug)]
+  keep <- !is.na(df$slug) & nzchar(df$slug)
+  # If the column exists, entities marked exclude_from_spotting = TRUE are
+  # dropped entirely elsewhere — they should not bypass the frequency filter here.
+  if ("exclude_from_spotting" %in% names(df))
+    keep <- keep & (is.na(df$exclude_from_spotting) | !df$exclude_from_spotting)
+  df$slug[keep]
+}
+
+load_excluded_entity_slugs <- function(path = PROTECTED_ENTITIES_PATH) {
+  if (!file.exists(path)) return(character(0))
+  df <- read_csv(path, show_col_types = FALSE)
+  needed <- c("slug", "exclude_from_spotting")
+  if (!all(needed %in% names(df))) return(character(0))
+  df$slug[!is.na(df$slug) & nzchar(df$slug) & df$exclude_from_spotting == TRUE]
 }
 
 load_vtt_registry <- function(registry_path = "config/vtt_registry.csv",
