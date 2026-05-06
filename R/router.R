@@ -3,7 +3,7 @@ library(jsonlite)
 route_verdict <- function(verdict, confidence) {
   if (verdict == "skipped")     return("skip")
   if (verdict == "parse_error") return("enqueue")
-  if (verdict == "rejected" && !is.na(confidence) && confidence >= 0.95)
+  if (verdict == "rejected" && !is.na(confidence) && confidence >= CRITIC_REJECT_THRESHOLD)
     return("critic_reject")
   if (verdict == "rejected")    return("enqueue")
 
