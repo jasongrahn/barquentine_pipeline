@@ -9,6 +9,31 @@ server <- function(input, output, session) {
   queue_rv      <- reactiveVal(data.frame())
   selected_id   <- reactiveVal(NULL)
   action_msg_rv <- reactiveVal(NULL)
+  action_log_rv <- reactiveVal(list())
+
+  .confidence_badge <- function(verdict, confidence) {
+    if (!is.na(confidence) && confidence < 0.50)
+      return(tags$span(class = "conf-danger",  "\u274C ", sprintf("%.0f%%", confidence * 100)))
+    if (!is.na(confidence) && verdict == "approved")
+      return(tags$span(class = "conf-approved", "\u2705 ", sprintf("%.0f%%", confidence * 100)))
+    if (!is.na(confidence))
+      return(tags$span(class = "conf-warn",    "\u26A0 ", sprintf("%.0f%%", confidence * 100)))
+    NULL
+  }
+
+  .log_action <- function(section_id, entity_name, label, prior_draft = NULL,
+                           was_merged = FALSE) {
+    entry <- list(
+      section_id  = section_id,
+      entity_name = entity_name,
+      label       = label,
+      at          = format(Sys.time(), "%H:%M:%S"),
+      prior_draft = prior_draft,
+      was_merged  = was_merged
+    )
+    log <- c(list(entry), action_log_rv())
+    action_log_rv(head(log, 5))
+  }
 
   .reload_queue <- function() {
     df <- read_queue(.queue_path = QUEUE_PATH_ABS, status = ENTITY_STATUSES)
@@ -162,10 +187,9 @@ server <- function(input, output, session) {
           )
         ),
         column(5, style = "text-align:right;padding-top:14px;",
-          if (nzchar(verdict)) tags$span(
-            class = verdict_class,
-            paste0("Critic: ", verdict,
-                   if (!is.na(confidence)) paste0(" (", conf_label, ")") else "")
+          tagList(
+            if (nzchar(verdict)) tags$span(class = verdict_class, paste0("Critic: ", verdict, " ")),
+            .confidence_badge(verdict, confidence)
           )
         )
       ),
@@ -259,6 +283,7 @@ server <- function(input, output, session) {
       quote_text <- as.character(quotes[[card_i]])
       # Use JS to flash the matching passage in the source pane
       js_safe <- gsub("'", "\\'", quote_text, fixed = TRUE)
+      snippet <- substr(js_safe, 1, 50)
       runjs(sprintf(
         "(function(){
           var els = document.querySelectorAll('.source-passage');
@@ -271,7 +296,18 @@ server <- function(input, output, session) {
             }
           });
         })();",
-        substr(js_safe, 1, 50)
+        snippet
+      ))
+      runjs(sprintf(
+        "(function(){
+          var d = document.getElementById('draft_preview_content');
+          if (!d) return;
+          if ((d.innerText || '').indexOf('%s') !== -1) {
+            d.style.outline = '2px solid #fd7e14';
+            setTimeout(function(){ d.style.outline = ''; }, 2000);
+          }
+        })();",
+        snippet
       ))
     }
   })
@@ -292,30 +328,50 @@ server <- function(input, output, session) {
   }
 
   # ---------------------------------------------------------------------------
-  # Approve
+  # Approve (unified — handles both Preview and Edit tabs)
   # ---------------------------------------------------------------------------
   observeEvent(input$approve_btn, {
     row <- current_row()
     if (is.null(row)) return()
-    draft <- .nc(row$draft, "")
-    if (!nzchar(draft)) {
-      action_msg_rv(list(text = "Draft is empty — Regenerate first.", color = "#dc3545"))
-      return()
+
+    tab       <- .nc(input$draft_tabs, "Preview")
+    entity_id <- row$section_id
+
+    draft <- if (tab == "Edit") {
+      ed <- .nc(input[[paste0("draft_edit_", entity_id)]], "")
+      if (!nzchar(trimws(ed))) {
+        action_msg_rv(list(text = "Edited draft is empty.", color = "#dc3545"))
+        return()
+      }
+      if (trimws(ed) == trimws(.nc(row$draft, ""))) {
+        action_msg_rv(list(
+          text  = "No changes detected. Edit the text first, or switch to Preview to approve as-is.",
+          color = "#fd7e14"
+        ))
+        return()
+      }
+      ed
+    } else {
+      d <- .nc(row$draft, "")
+      if (!nzchar(d)) {
+        action_msg_rv(list(text = "Draft is empty \u2014 Regenerate first.", color = "#dc3545"))
+        return()
+      }
+      d
     }
 
-    note_type <- .nc(row$note_type, "npc")
-    vault_rel <- switch(note_type,
-      npc      = file.path("npcs",      paste0(row$section_id, ".md")),
-      location = file.path("locations", paste0(row$section_id, ".md")),
-      faction  = file.path("factions",  paste0(row$section_id, ".md")),
-      file.path("npcs", paste0(row$section_id, ".md"))
+    resolution <- if (tab == "Edit") "accepted_with_edit" else "accepted"
+    note_type  <- .nc(row$note_type, "npc")
+    vault_rel  <- switch(note_type,
+      npc      = file.path("npcs",      paste0(entity_id, ".md")),
+      location = file.path("locations", paste0(entity_id, ".md")),
+      faction  = file.path("factions",  paste0(entity_id, ".md")),
+      file.path("npcs", paste0(entity_id, ".md"))
     )
-
     ep_ids <- tryCatch(
       fromJSON(.nc(row$source_episode_ids, "[]"), simplifyVector = TRUE),
       error = function(e) character(0)
     )
-
     content <- tryCatch({
       if (note_exists(vault_rel, dry_run = DRY_RUN,
                        .vault_path = VAULT_PATH_ABS, .dry_run_path = DRY_RUN_PATH)) {
@@ -323,18 +379,24 @@ server <- function(input, output, session) {
           get_output_path(vault_rel, dry_run = DRY_RUN,
                           .vault_path = VAULT_PATH_ABS, .dry_run_path = DRY_RUN_PATH),
           warn = FALSE), collapse = "\n")
-        ep_id <- if (length(ep_ids) > 0) ep_ids[[1]] else row$section_id
+        ep_id <- if (length(ep_ids) > 0) ep_ids[[1]] else entity_id
         supplement_note(existing, draft, ep_id, note_type)
-      } else {
-        draft
-      }
+      } else draft
     }, error = function(e) draft)
 
     tryCatch({
       write_note(content, vault_rel, dry_run = DRY_RUN, overwrite = TRUE,
                  .vault_path = VAULT_PATH_ABS, .dry_run_path = DRY_RUN_PATH)
-      resolve_item(row$section_id, "accepted", .queue_path = QUEUE_PATH_ABS)
-      action_msg_rv(list(text = paste0("\u2714 Approved: ", row$section_id), color = "#28a745"))
+      resolve_item(entity_id, resolution,
+                   edited_draft = if (tab == "Edit") draft else NULL,
+                   .queue_path = QUEUE_PATH_ABS)
+      .log_action(entity_id, .nc(row$entity_name, entity_id), resolution,
+                  prior_draft = .nc(row$draft, ""))
+      action_msg_rv(list(
+        text  = paste0("\u2714 ", if (tab == "Edit") "Approved with edits" else "Approved",
+                       ": ", entity_id),
+        color = "#28a745"
+      ))
       .advance()
     }, error = function(e) {
       action_msg_rv(list(text = paste0("Error: ", conditionMessage(e)), color = "#dc3545"))
@@ -349,47 +411,6 @@ server <- function(input, output, session) {
     action_msg_rv(list(text = "Edit the draft above, then click Approve.", color = "#555"))
   })
 
-  # Approve from edit tab uses textarea value
-  observeEvent(input$approve_btn, {
-    tab <- .nc(input$draft_tabs, "Preview")
-    if (tab != "Edit") return()
-
-    row <- current_row()
-    if (is.null(row)) return()
-    entity_id <- row$section_id
-    edited    <- .nc(input[[paste0("draft_edit_", entity_id)]], "")
-
-    if (!nzchar(trimws(edited))) {
-      action_msg_rv(list(text = "Edited draft is empty.", color = "#dc3545"))
-      return()
-    }
-    if (trimws(edited) == trimws(.nc(row$draft, ""))) {
-      action_msg_rv(list(text = "No changes detected. Switch to Approve or edit the text.",
-                         color = "#fd7e14"))
-      return()
-    }
-
-    note_type <- .nc(row$note_type, "npc")
-    vault_rel <- switch(note_type,
-      npc      = file.path("npcs",      paste0(entity_id, ".md")),
-      location = file.path("locations", paste0(entity_id, ".md")),
-      faction  = file.path("factions",  paste0(entity_id, ".md")),
-      file.path("npcs", paste0(entity_id, ".md"))
-    )
-
-    tryCatch({
-      write_note(edited, vault_rel, dry_run = DRY_RUN, overwrite = TRUE,
-                 .vault_path = VAULT_PATH_ABS, .dry_run_path = DRY_RUN_PATH)
-      resolve_item(entity_id, "accepted_with_edit",
-                   edited_draft = edited, .queue_path = QUEUE_PATH_ABS)
-      action_msg_rv(list(text = paste0("\u2714 Approved with edits: ", entity_id),
-                         color = "#28a745"))
-      .advance()
-    }, error = function(e) {
-      action_msg_rv(list(text = paste0("Error: ", conditionMessage(e)), color = "#dc3545"))
-    })
-  }, priority = -1)  # lower priority so preview-tab approve fires first
-
   # ---------------------------------------------------------------------------
   # Skip
   # ---------------------------------------------------------------------------
@@ -397,6 +418,7 @@ server <- function(input, output, session) {
     row <- current_row()
     if (is.null(row)) return()
     resolve_item(row$section_id, "snoozed", .queue_path = QUEUE_PATH_ABS)
+    .log_action(row$section_id, .nc(row$entity_name, row$section_id), "snoozed")
     action_msg_rv(list(text = paste0("Skipped: ", row$section_id), color = "#888"))
     .advance()
   })
@@ -428,6 +450,7 @@ server <- function(input, output, session) {
     if (is.null(row)) return()
     reason <- .nc(input$reject_reason, "rejected_garbage")
     resolve_item(row$section_id, reason, .queue_path = QUEUE_PATH_ABS)
+    .log_action(row$section_id, .nc(row$entity_name, row$section_id), reason)
     action_msg_rv(list(text = paste0("Rejected: ", row$section_id, " (", reason, ")"),
                        color = "#dc3545"))
     .advance()
@@ -485,6 +508,8 @@ server <- function(input, output, session) {
     tryCatch({
       update_draft(row$section_id, new_draft, new_verdict,
                    .queue_path = QUEUE_PATH_ABS)
+      .log_action(row$section_id, .nc(row$entity_name, row$section_id), "regenerated",
+                  prior_draft = .nc(row$draft, ""))
       action_msg_rv(list(
         text  = paste0("\u2714 Regenerated: ", row$section_id,
                        " \u2014 critic: ", new_verdict$verdict),
@@ -583,10 +608,65 @@ server <- function(input, output, session) {
 
     resolve_item(row$section_id, "merged",
                  merged_into = target, .queue_path = QUEUE_PATH_ABS)
+    .log_action(row$section_id, surface_form, "merged", was_merged = TRUE)
     action_msg_rv(list(
       text  = paste0("\u2714 Merged \u2018", surface_form, "\u2019 into \u2018", target, "\u2019"),
       color = "#28a745"
     ))
     .advance()
+  })
+
+  # ---------------------------------------------------------------------------
+  # Action log panel
+  # ---------------------------------------------------------------------------
+  output$action_log_ui <- renderUI({
+    log <- action_log_rv()
+    if (length(log) == 0) return(NULL)
+
+    most_recent <- log[[1]]
+
+    tags$details(
+      tags$summary(
+        style = "cursor:pointer;font-size:0.82em;color:#666;",
+        paste0("Recent actions (", length(log), ")")
+      ),
+      tags$div(
+        style = "font-size:0.8em;",
+        lapply(seq_along(log), function(i) {
+          e <- log[[i]]
+          tags$div(
+            style = "padding:2px 0; border-bottom:1px solid #eee;",
+            tags$span(style = "color:#888;", paste0(e$at, " ")),
+            tags$strong(e$label), " \u2014 ", e$entity_name
+          )
+        }),
+        if (!most_recent$was_merged) actionButton(
+          "undo_btn", "Undo last",
+          class = "btn-outline-secondary btn-sm",
+          style = "margin-top:6px;"
+        ) else tags$p(
+          style = "font-size:0.78em;color:#888;margin-top:4px;",
+          "Last action was a merge \u2014 vault changes must be reverted manually."
+        )
+      )
+    )
+  })
+
+  observeEvent(input$undo_btn, {
+    log <- action_log_rv()
+    if (length(log) == 0) return()
+    last <- log[[1]]
+    if (last$was_merged) return()
+
+    tryCatch({
+      revert_to_pending(last$section_id, prior_draft = last$prior_draft,
+                        .queue_path = QUEUE_PATH_ABS)
+      action_log_rv(log[-1])
+      .reload_queue()
+      selected_id(last$section_id)
+      action_msg_rv(list(text = paste0("Undone: ", last$entity_name), color = "#555"))
+    }, error = function(e) {
+      action_msg_rv(list(text = paste0("Undo failed: ", conditionMessage(e)), color = "#dc3545"))
+    })
   })
 }

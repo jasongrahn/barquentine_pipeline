@@ -56,6 +56,7 @@ VAULT_PATH_ABS <- VAULT_PATH  # already absolute in config.R
   passage_tags <- lapply(seq_along(passages), function(i) {
     highlighted <- .highlight_entity(passages[[i]], entity_name)
     tags$div(
+      class = "source-passage",
       style = "margin-bottom: 14px;",
       tags$div(
         style = "font-size:0.75em;color:#888;font-weight:600;margin-bottom:2px;",
@@ -85,6 +86,7 @@ VAULT_PATH_ABS <- VAULT_PATH  # already absolute in config.R
     id = "draft_tabs",
     tabPanel("Preview",
       tags$div(
+        id    = "draft_preview_content",
         style = "max-height:420px;overflow-y:auto;padding:10px;border:1px solid #dee2e6;border-radius:4px;margin-top:8px;",
         HTML(html_preview)
       )
@@ -114,6 +116,9 @@ ui <- fluidPage(
     .confidence-bar {
       height: 6px; border-radius: 3px; background: #e9ecef; margin-top: 4px;
     }
+    .conf-approved { color: #28a745; font-weight: bold; }
+    .conf-warn     { color: #fd7e14; font-weight: bold; }
+    .conf-danger   { color: #dc3545; font-weight: bold; }
   "))),
 
   titlePanel("Barquentine \u2014 Entity Review Queue"),
@@ -137,7 +142,9 @@ ui <- fluidPage(
       textInput("search_box", label = NULL, placeholder = "\U1F50D Search entities\u2026",
                 width = "100%"),
       hr(style = "margin:6px 0;"),
-      uiOutput("sidebar_content")
+      uiOutput("sidebar_content"),
+      hr(style = "margin:8px 0;"),
+      uiOutput("action_log_ui")
     ),
 
     mainPanel(

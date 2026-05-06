@@ -180,3 +180,22 @@ update_draft <- function(section_id, new_draft, new_verdict_list = NULL,
   write_csv(df, csv_path)
   invisible(section_id)
 }
+
+revert_to_pending <- function(section_id, prior_draft = NULL,
+                               .queue_path = REVIEW_QUEUE_PATH) {
+  csv_path <- .queue_csv_path(.queue_path)
+  df  <- read_csv(csv_path, show_col_types = FALSE)
+  df  <- .fill_missing_columns(df)
+  idx <- which(df$section_id == section_id)
+  if (length(idx) == 0) stop("section_id not found: ", section_id)
+
+  now <- format(Sys.time(), "%Y-%m-%dT%H:%M:%S")
+  df$status[idx]         <- "pending"
+  df$resolved_at[idx]    <- NA_character_
+  df$last_action_at[idx] <- now
+  if (!is.null(prior_draft)) df$draft[idx] <- prior_draft
+
+  write_csv(df, csv_path)
+  invisible(section_id)
+}
+
