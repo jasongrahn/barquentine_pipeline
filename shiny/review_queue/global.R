@@ -7,8 +7,10 @@ library(fs)
 library(yaml)
 library(commonmark)
 
-# shiny::runApp("shiny/review_queue") sets wd to shiny/review_queue/
-PROJECT_ROOT <- normalizePath(file.path(getwd(), "../.."))
+# Shiny may source global.R with wd = project root OR wd = shiny/review_queue/
+# depending on the R/Shiny version. Detect by checking for a project root marker.
+.wd <- normalizePath(getwd())
+PROJECT_ROOT <- if (file.exists(file.path(.wd, "_targets.R"))) .wd else normalizePath(file.path(.wd, "../.."))
 setwd(PROJECT_ROOT)
 
 source("config.R")

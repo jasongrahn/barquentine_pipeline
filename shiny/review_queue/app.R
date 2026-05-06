@@ -1,7 +1,8 @@
 # global.R is auto-sourced by runApp(dir) but not runApp(file).
 # This guard makes both invocation styles work and recovers from stale session state.
 if (!exists("PROJECT_ROOT")) {
-  PROJECT_ROOT <- normalizePath(file.path(getwd(), "../.."))
+  .wd <- normalizePath(getwd())
+  PROJECT_ROOT <- if (file.exists(file.path(.wd, "_targets.R"))) .wd else normalizePath(file.path(.wd, "../.."))
   setwd(PROJECT_ROOT)
   source("shiny/review_queue/global.R")
 }
