@@ -54,7 +54,9 @@ load_excluded_entity_slugs <- function(path = PROTECTED_ENTITIES_PATH) {
   df <- read_csv(path, show_col_types = FALSE)
   needed <- c("slug", "exclude_from_spotting")
   if (!all(needed %in% names(df))) return(character(0))
-  df$slug[!is.na(df$slug) & nzchar(df$slug) & df$exclude_from_spotting == TRUE]
+  flag <- df$exclude_from_spotting
+  if (is.character(flag)) flag <- tolower(flag) == "true"
+  df$slug[!is.na(df$slug) & nzchar(df$slug) & !is.na(flag) & flag]
 }
 
 load_vtt_registry <- function(registry_path = "config/vtt_registry.csv",
@@ -175,7 +177,10 @@ aggregate_entity_passages <- function(vtt_file_results, alias_registry,
         if (is.null(slug)) slug <- make_slug(name)
         if (is.list(slug)) slug <- slug$slug
 
-        if (slug %in% exclusion_slugs) next
+        if (slug %in% exclusion_slugs) {
+          message(sprintf("  [protected] dropped: '%s'", name))
+          next
+        }
 
         if (is.null(acc[[slug]])) {
           acc[[slug]] <- list(

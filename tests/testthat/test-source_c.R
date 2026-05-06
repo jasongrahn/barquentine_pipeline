@@ -372,3 +372,51 @@ test_that("aggregate_entity_passages still drops non-protected slug below thresh
   slugs <- vapply(result, `[[`, character(1), "entity_id")
   expect_false("rando" %in% slugs)
 })
+
+# ---- load_excluded_entity_slugs ----
+
+test_that("load_excluded_entity_slugs returns character(0) for missing file", {
+  expect_equal(load_excluded_entity_slugs("/nonexistent/path.csv"), character(0))
+})
+
+test_that("load_excluded_entity_slugs returns only slugs where exclude_from_spotting is TRUE", {
+  f <- withr::local_tempfile(fileext = ".csv")
+  writeLines(c(
+    "slug,canonical_name,exclude_from_spotting",
+    "john,John,TRUE",
+    "chase,Chase,TRUE",
+    "elder_abarat,Elder Abarat,FALSE"
+  ), f)
+  result <- load_excluded_entity_slugs(f)
+  expect_setequal(result, c("john", "chase"))
+  expect_false("elder_abarat" %in% result)
+})
+
+test_that("load_excluded_entity_slugs handles character true/false values", {
+  f <- withr::local_tempfile(fileext = ".csv")
+  writeLines(c(
+    "slug,canonical_name,exclude_from_spotting",
+    "john,John,true",
+    "david,David,true",
+    "elder_abarat,Elder Abarat,false"
+  ), f)
+  result <- load_excluded_entity_slugs(f)
+  expect_setequal(result, c("john", "david"))
+  expect_false("elder_abarat" %in% result)
+})
+
+test_that("aggregate_entity_passages drops player-name slug even above chunk threshold", {
+  assign("resolve_alias", function(...) NULL, envir = globalenv())
+  on.exit(rm("resolve_alias", envir = globalenv()), add = TRUE)
+
+  file1 <- list(
+    episode_id = "S2e34",
+    npcs       = list("John" = list("c1", "c2", "c3", "c4")),
+    locations  = list(), items = list(), factions = list()
+  )
+  result <- aggregate_entity_passages(list(file1), list(),
+                                      min_chunks = 3L,
+                                      exclusion_slugs = "john")
+  slugs <- if (length(result) == 0) character(0) else vapply(result, `[[`, character(1), "entity_id")
+  expect_false("john" %in% slugs)
+})
