@@ -7,10 +7,11 @@ library(fs)
 library(yaml)
 library(commonmark)
 
-# Shiny may source global.R with wd = project root OR wd = shiny/review_queue/
-# depending on the R/Shiny version. Detect by checking for a project root marker.
+# Shiny may source global.R with wd = project root OR wd = shiny/review_queue/.
+# Check for the project's top-level R/ and shiny/ dirs — always present at root,
+# never inside the app subdirectory.
 .wd <- normalizePath(getwd())
-PROJECT_ROOT <- if (file.exists(file.path(.wd, "_targets.R"))) .wd else normalizePath(file.path(.wd, "../.."))
+PROJECT_ROOT <- if (dir.exists(file.path(.wd, "R")) && dir.exists(file.path(.wd, "shiny"))) .wd else normalizePath(file.path(.wd, "../.."))
 setwd(PROJECT_ROOT)
 
 source("config.R")
