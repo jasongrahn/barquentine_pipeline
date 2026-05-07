@@ -11,6 +11,12 @@ commit_vault <- function(session_id, vault_path = VAULT_PATH,
   }
 
   git_add(".", repo = vault_path)
+  staged <- git_status(repo = vault_path)
+  staged <- staged[staged$staged, ]
+  if (nrow(staged) == 0) {
+    message("vault_commit: nothing to commit (all notes queued for review)")
+    return(invisible(NULL))
+  }
   hash <- git_commit(commit_message, repo = vault_path)
   invisible(hash)
 }
