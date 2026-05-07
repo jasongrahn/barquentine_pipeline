@@ -82,11 +82,11 @@ TRAINING_DATA_PATH <- "training_data"
 # Pipeline state
 # -----------------------------------------------------------------------------
 # Update CURRENT_SESSION before each run
-CURRENT_SESSION <- "S2e34"           # ← update this each session
+CURRENT_SESSION <- "S2e42"           # ← update this each session
 
 # Set TRUE to write to /tmp/barquentine-preview/ instead of vault
 # Always do a dry run first when testing new extraction prompts
-DRY_RUN         <- TRUE             # ← flip to FALSE when ready for live run
+DRY_RUN         <- FALSE            # ← flip to FALSE when ready for live run
 DRY_RUN_PATH    <- "/tmp/barquentine-preview"
 
 # VTT episodes to process in Phase 3. NULL = all confirmed episodes.
