@@ -24,9 +24,12 @@ source("R/git_commit.R")
 
 list(
 
-  # --- Source B: multi-tab Google Doc ----------------------------------------
-  tar_target(source_b_raw,      fetch_gdoc(EPISODE_NOTES_DOC_ID)),
-  tar_target(source_b_sections, parse_source_b(source_b_raw)),
+  # --- Source B: scan Drive folder, fetch all unprocessed episode docs --------
+  tar_target(source_b_sections,
+             fetch_all_episode_docs(EPISODE_NOTES_FOLDER_ID,
+                                    DOC_REGISTRY_PATH,
+                                    VAULT_PATH),
+             format = "rds"),
 
   tar_target(section_ids, names(source_b_sections)),
 
