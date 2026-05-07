@@ -8,7 +8,7 @@
   # prefix/suffix OR substring containment — catches "captain" / "the_captain"
   prefix_match    <- startsWith(section_id_lc, candidates_lc) | startsWith(candidates_lc, section_id_lc)
   substring_match <- grepl(section_id_lc, candidates_lc, fixed = TRUE) |
-                     grepl(candidates_lc, section_id_lc, fixed = TRUE)
+                     vapply(candidates_lc, grepl, logical(1), x = section_id_lc, fixed = TRUE)
   candidates[prefix_match | substring_match]
 }
 
