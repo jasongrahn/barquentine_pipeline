@@ -10,8 +10,7 @@ source(test_path("../../R/router.R"))
 
 # Stub for enqueue_review — pushed to globalenv so dispatch_note's lexical scope finds it
 assign("enqueue_review",
-       function(draft, verdict_list, section_id, source_text,
-                .queue_path = REVIEW_QUEUE_PATH) invisible(NULL),
+       function(draft, verdict_list, section_id, source_text, ...) invisible(NULL),
        envir = globalenv())
 
 # --- route_verdict() ---------------------------------------------------------

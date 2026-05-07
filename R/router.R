@@ -1,6 +1,10 @@
+library(jsonlite)
+
 route_verdict <- function(verdict, confidence) {
   if (verdict == "skipped")     return("skip")
   if (verdict == "parse_error") return("enqueue")
+  if (verdict == "rejected" && !is.na(confidence) && confidence >= CRITIC_REJECT_THRESHOLD)
+    return("critic_reject")
   if (verdict == "rejected")    return("enqueue")
 
   if (verdict == "approved") {
@@ -44,7 +48,6 @@ dispatch_note <- function(draft, verdict_list, section_id, source_text,
     claude_raw <- claude_generate_note(prompt, CRITIC_SYSTEM_PROMPT)
     claude_verdict <- parse_critic_response(claude_raw)
 
-    # Append Claude's verdict to issues so reviewer sees both opinions
     combined_verdict <- verdict_list
     combined_verdict$escalated     <- TRUE
     combined_verdict$claude_verdict <- claude_verdict$verdict
@@ -66,13 +69,12 @@ dispatch_note <- function(draft, verdict_list, section_id, source_text,
     }
 
     enqueue_review(draft, combined_verdict, section_id, source_text,
-                   .queue_path = .queue_path)
+                   note_type = "session", .queue_path = .queue_path)
     return(invisible("escalated_enqueued"))
   }
 
-  # action == "enqueue"
   enqueue_review(draft, verdict_list, section_id, source_text,
-                 .queue_path = .queue_path)
+                 note_type = "session", .queue_path = .queue_path)
   invisible("enqueued")
 }
 
@@ -91,12 +93,42 @@ dispatch_entity_note <- function(draft, verdict_list, entity_id, entity_name,
                                   .vault_path   = VAULT_PATH,
                                   .dry_run_path = DRY_RUN_PATH,
                                   .queue_path   = REVIEW_QUEUE_PATH) {
+  source_text    <- paste(source_passages, collapse = "\n\n---\n\n")
+  ep_ids_json    <- toJSON(source_episode_ids, auto_unbox = TRUE)
+
+  if (is.null(draft) || !nzchar(trimws(draft))) {
+    enqueue_review(
+      draft              = NA_character_,
+      verdict_list       = list(verdict = "generation_failed", confidence = NA_real_,
+                                issues = list("Generator produced no output"),
+                                source_quotes = list(), escalated = FALSE),
+      section_id         = entity_id,
+      source_text        = source_text,
+      note_type          = note_type,
+      entity_name        = entity_name,
+      chunk_count        = length(source_passages),
+      source_episode_ids = ep_ids_json,
+      status             = "generation_failed",
+      .queue_path        = .queue_path
+    )
+    return(invisible("generation_failed"))
+  }
+
   action <- route_verdict(verdict_list$verdict, verdict_list$confidence)
 
   if (action == "skip") return(invisible(NULL))
 
+  if (action == "critic_reject") {
+    enqueue_review(draft, verdict_list, entity_id, source_text,
+                   note_type = note_type, entity_name = entity_name,
+                   chunk_count = length(source_passages),
+                   source_episode_ids = ep_ids_json,
+                   status = "critic_rejected",
+                   .queue_path = .queue_path)
+    return(invisible("critic_rejected"))
+  }
+
   relative_path <- .entity_relative_path(entity_id, note_type)
-  source_text   <- paste(source_passages, collapse = "\n\n---\n\n")
 
   if (action == "auto_approve") {
     content <- if (note_exists(relative_path, dry_run = dry_run,
@@ -146,12 +178,17 @@ dispatch_entity_note <- function(draft, verdict_list, entity_id, entity_name,
     }
 
     enqueue_review(draft, combined_verdict, entity_id, source_text,
+                   note_type = note_type, entity_name = entity_name,
+                   chunk_count = length(source_passages),
+                   source_episode_ids = ep_ids_json,
                    .queue_path = .queue_path)
     return(invisible("escalated_enqueued"))
   }
 
-  # action == "enqueue"
   enqueue_review(draft, verdict_list, entity_id, source_text,
+                 note_type = note_type, entity_name = entity_name,
+                 chunk_count = length(source_passages),
+                 source_episode_ids = ep_ids_json,
                  .queue_path = .queue_path)
   invisible("enqueued")
 }

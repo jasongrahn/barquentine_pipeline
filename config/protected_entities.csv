@@ -1,7 +1,14 @@
-slug,canonical_name,note_type
-basil,Basil,npc
-elder_abarat,Elder Abarat,npc
-room,Room,npc
-lumi,Lumi,npc
-ted,Ted,npc
-ted_2,Ted-2,npc
+slug,canonical_name,entity_type,played_by,exclude_from_spotting
+basil,Basil,pc,David,TRUE
+captain,Captain,pc_alias,David,TRUE
+the_captain,The Captain,pc_alias,David,TRUE
+room,Room,pc,John,TRUE
+lumi,Lumi,pc,Chase,TRUE
+john,John,player,,TRUE
+chase,Chase,player,,TRUE
+david,David,player,,TRUE
+jason,Jason,player,,TRUE
+elder_abarat,Elder Abarat,npc,,FALSE
+ted,Ted,npc,,FALSE
+ted_2,Ted-2,npc,,FALSE
+the_admiral,The Admiral,npc,,FALSE

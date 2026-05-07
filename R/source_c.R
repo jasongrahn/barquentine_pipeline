@@ -41,7 +41,22 @@ load_protected_slugs <- function(path = PROTECTED_ENTITIES_PATH) {
   if (!file.exists(path)) return(character(0))
   df <- read_csv(path, show_col_types = FALSE)
   if (!"slug" %in% names(df)) return(character(0))
-  df$slug[!is.na(df$slug) & nzchar(df$slug)]
+  keep <- !is.na(df$slug) & nzchar(df$slug)
+  # If the column exists, entities marked exclude_from_spotting = TRUE are
+  # dropped entirely elsewhere — they should not bypass the frequency filter here.
+  if ("exclude_from_spotting" %in% names(df))
+    keep <- keep & (is.na(df$exclude_from_spotting) | !df$exclude_from_spotting)
+  df$slug[keep]
+}
+
+load_excluded_entity_slugs <- function(path = PROTECTED_ENTITIES_PATH) {
+  if (!file.exists(path)) return(character(0))
+  df <- read_csv(path, show_col_types = FALSE)
+  needed <- c("slug", "exclude_from_spotting")
+  if (!all(needed %in% names(df))) return(character(0))
+  flag <- df$exclude_from_spotting
+  if (is.character(flag)) flag <- tolower(flag) == "true"
+  df$slug[!is.na(df$slug) & nzchar(df$slug) & !is.na(flag) & flag]
 }
 
 load_vtt_registry <- function(registry_path = "config/vtt_registry.csv",
@@ -130,6 +145,14 @@ extract_relevant_sentences <- function(passage, entity_name, window = 2L) {
   paste(sentences[idx], collapse = " ")
 }
 
+.is_garbage_name <- function(name) {
+  if (!grepl("[a-zA-Z]", name)) return(TRUE)
+  if (nchar(name) > 50L)       return(TRUE)
+  normalized <- tolower(gsub("[^a-z]", "_", tolower(trimws(name))))
+  grepl("^(missing|not_present|not_mentioned|implied_but|unclear|error_from|unknown_name)$",
+        normalized)
+}
+
 aggregate_entity_passages <- function(vtt_file_results, alias_registry,
                                       min_chunks = MIN_ENTITY_CHUNK_COUNT,
                                       exclusion_slugs = character(0),
@@ -146,11 +169,18 @@ aggregate_entity_passages <- function(vtt_file_results, alias_registry,
 
       for (name in names(file_result[[etype]])) {
         chunks <- file_result[[etype]][[name]]
+        if (.is_garbage_name(name)) {
+          message(sprintf("  [garbage name] dropped: '%s'", name))
+          next
+        }
         slug   <- resolve_alias(name, alias_registry)
         if (is.null(slug)) slug <- make_slug(name)
         if (is.list(slug)) slug <- slug$slug
 
-        if (slug %in% exclusion_slugs) next
+        if (slug %in% exclusion_slugs) {
+          message(sprintf("  [protected] dropped: '%s'", name))
+          next
+        }
 
         if (is.null(acc[[slug]])) {
           acc[[slug]] <- list(

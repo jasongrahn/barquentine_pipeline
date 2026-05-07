@@ -134,6 +134,11 @@ list(
     protected_slugs,
     load_protected_slugs(protected_entities_path)
   ),
+  # Excluded entity slugs — PCs and player real names that must never become notes
+  tar_target(
+    excluded_protected_slugs,
+    load_excluded_entity_slugs(protected_entities_path)
+  ),
 
   # Parsed registry — re-runs when the CSV content changes
   tar_target(
@@ -165,7 +170,7 @@ list(
   tar_target(
     entity_passages,
     aggregate_entity_passages(vtt_entities, alias_registry,
-                              exclusion_slugs = entity_exclusions,
+                              exclusion_slugs = c(entity_exclusions, excluded_protected_slugs),
                               protected_slugs = protected_slugs)
   ),
 
