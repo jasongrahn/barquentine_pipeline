@@ -33,7 +33,9 @@ test_that("route_verdict returns auto_approve for approved above threshold", {
 })
 
 test_that("route_verdict returns enqueue for approved below threshold", {
-  expect_equal(route_verdict("approved", CRITIC_AUTO_APPROVE_THRESHOLD - 0.01), "enqueue")
+  # CRITIC_AUTO_APPROVE_THRESHOLD is Inf; any finite confidence is below it
+  expect_equal(route_verdict("approved", 0.99), "enqueue")
+  expect_equal(route_verdict("approved", 0.85), "enqueue")
 })
 
 test_that("route_verdict returns escalate for flagged below escalate threshold", {
@@ -81,33 +83,25 @@ test_that("dispatch_note returns NULL invisibly for skipped verdict", {
   expect_null(result)
 })
 
-# --- dispatch_note() auto_approve path ---------------------------------------
+# --- dispatch_note() auto_approve path (disabled — CRITIC_AUTO_APPROVE_THRESHOLD = Inf) ----
+# With Inf threshold, any finite confidence routes to enqueue, not auto_approve.
+# The auto_approve branch is preserved in code but unreachable in normal operation.
 
-test_that("dispatch_note writes note to vault for auto_approve verdict", {
-  tmp <- local_tempdir()
-  dispatch_note(
+test_that("dispatch_note enqueues approved note at finite confidence (auto-approve disabled)", {
+  tmp_queue <- local_tempdir()
+  enqueue_review <- function(...) invisible(NULL)
+
+  result <- withVisible(dispatch_note(
     draft        = "# Note content",
     verdict_list = list(verdict = "approved", confidence = 0.95),
     section_id   = "S2e33",
     source_text  = "source",
     dry_run      = TRUE,
-    .dry_run_path = tmp
-  )
-  expect_true(file.exists(file.path(tmp, "sessions", "S2e33.md")))
-})
-
-test_that("dispatch_note returns auto_approved invisibly on success", {
-  tmp    <- local_tempdir()
-  result <- withVisible(dispatch_note(
-    draft        = "content",
-    verdict_list = list(verdict = "approved", confidence = 0.95),
-    section_id   = "S2e99",
-    source_text  = "source",
-    dry_run      = TRUE,
-    .dry_run_path = tmp
+    .dry_run_path = local_tempdir(),
+    .queue_path   = tmp_queue
   ))
   expect_false(result$visible)
-  expect_equal(result$value, "auto_approved")
+  expect_equal(result$value, "enqueued")
 })
 
 # --- dispatch_note() enqueue path --------------------------------------------
@@ -182,23 +176,21 @@ test_that("dispatch_entity_note returns NULL invisibly on skipped verdict", {
   expect_false(result$visible)
 })
 
-test_that("dispatch_entity_note auto_approve writes to npcs/ subdirectory", {
+test_that("dispatch_entity_note enqueues approved entity at finite confidence (auto-approve disabled)", {
   tmp <- withr::local_tempdir()
-  assign("note_exists",   function(...) FALSE,            envir = globalenv())
-  assign("write_note",    function(content, relative_path, ...) {
-    assign("written_path", relative_path, envir = globalenv())
-    invisible(NULL)
+  captured_id <- NULL
+  assign("enqueue_review", function(draft, verdict_list, section_id, ...) {
+    captured_id <<- section_id
+    invisible(section_id)
   }, envir = globalenv())
-  on.exit({
-    rm("note_exists", "write_note", "written_path", envir = globalenv())
-  }, add = TRUE)
+  on.exit(rm("enqueue_review", envir = globalenv()), add = TRUE)
 
-  v <- .make_entity_verdict("approved", 0.95)
+  v <- .make_entity_verdict("approved", 0.95)  # finite confidence → enqueue with Inf threshold
   dispatch_entity_note("draft", v, "Attorrnash", "Attorrnash", "npc",
                         list("passage"), list("S2e38"),
                         .vault_path = tmp, .dry_run_path = tmp,
                         .queue_path = tmp)
-  expect_equal(get("written_path", envir = globalenv()), "npcs/Attorrnash.md")
+  expect_equal(captured_id, "Attorrnash")
 })
 
 test_that("dispatch_entity_note enqueue calls enqueue_review with entity_id as section_id", {
@@ -218,7 +210,7 @@ test_that("dispatch_entity_note enqueue calls enqueue_review with entity_id as s
   expect_equal(captured_id, "Attorrnash")
 })
 
-test_that("dispatch_entity_note supplement path calls supplement_note when note exists", {
+test_that("dispatch_entity_note supplement path calls supplement_note when note exists (via auto_approve with Inf confidence)", {
   tmp <- withr::local_tempdir()
   note_path <- file.path(tmp, "npcs", "Attorrnash.md")
   dir.create(dirname(note_path), recursive = TRUE)
@@ -234,7 +226,9 @@ test_that("dispatch_entity_note supplement path calls supplement_note when note 
   on.exit(rm("note_exists", "get_output_path", "supplement_note", "write_note",
              envir = globalenv()), add = TRUE)
 
-  v <- .make_entity_verdict("approved", 0.95)
+  # Inf confidence triggers the auto_approve branch (confidence >= Inf is TRUE),
+  # exercising the supplement_note path even though auto-approve is effectively disabled.
+  v <- .make_entity_verdict("approved", Inf)
   dispatch_entity_note("draft", v, "Attorrnash", "Attorrnash", "npc",
                         list("passage"), list("S2e38"),
                         dry_run = TRUE,

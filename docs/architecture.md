@@ -1,7 +1,8 @@
 # Barquentine Wiki Pipeline — Design Document
-*Version 4.2 — Complete*
+*Version 4.3 — Complete*
 
 ## Changelog
+- v4.3: Local-only model architecture — `gemma4:latest` promoted to generator, `qwen3.5:9b` to critic, `llama3.1:8b` retired; `CRITIC_AUTO_APPROVE_THRESHOLD` set to `Inf` (all notes go through human review queue); Claude escalation paths removed from `R/critic.R` and `R/router.R`; see `docs/architecture_llm_evaluation.md` for the full analysis behind this decision
 - v4.2: HTML export fix documented; plain-text truncation finding recorded; `overwrite = TRUE` decision noted in _targets.R
 - v4.1: Basil corrected to PC; `aliases.json` replaced by vault-derived registry; `display_as` frontmatter field introduced
 
@@ -313,15 +314,24 @@ When the pipeline encounters an unresolvable name, it logs it to `review/review_
     └──────┬──────┘       └────────┬───────────────────┘
            │                       │
     ┌──────▼───────────────────────▼─────────────────────┐
-    │                  EXTRACTION LAYER                  │
-    │                                                    │
-    │  Sources A & B (Drive docs):                       │
-    │    → Claude API via httr2                          │
-    │      structured extraction + note generation       │
-    │                                                    │
-    │  Source C (VTT files):                             │
-    │    → Ollama + Qwen via httr2   ← entity spotting   │
-    │    → Claude API via httr2      ← note writing      │
+    │                  GENERATION LAYER                  │
+    │  Ollama / gemma4:latest (local, $0)                │
+    │    → session + entity note drafting (all sources)  │
+    │    → entity spotting on VTT chunks                 │
+    └──────────────────────────┬─────────────────────────┘
+                               │
+    ┌──────────────────────────▼─────────────────────────┐
+    │                   CRITIC LAYER                     │
+    │  Ollama / qwen3.5:9b (local, JSON schema enforced) │
+    │    → fact-checks draft vs source                   │
+    │    → all verdicts → review queue (auto-approve off)│
+    └──────────────────────────┬─────────────────────────┘
+                               │
+    ┌──────────────────────────▼─────────────────────────┐
+    │               SHINY REVIEW QUEUE                   │
+    │  Human reviews every note; critic issues inline    │
+    │  Accept / Accept with Edits / Reject               │
+    │  Decisions captured as SFT / DPO training pairs   │
     └──────────────────────────┬─────────────────────────┘
                                │
     ┌──────────────────────────▼─────────────────────────┐
@@ -329,7 +339,6 @@ When the pipeline encounters an unresolvable name, it logs it to `review/review_
     │  Dry-run: writes to /tmp/barquentine-preview/      │
     │  Live: writes to Obsidian vault                    │
     │  gert::git_commit() after each successful run      │
-    │  review_log.md updated with all flagged items      │
     └────────────────────────────────────────────────────┘
 ```
 
@@ -435,17 +444,18 @@ chunk_vtt <- function(vtt_text, chunk_words = 1500, overlap_words = 150) {
 }
 ```
 
-### Model String
-✅ **Confirmed.** `qwen3.5:9b` (6.6 GB) is the primary model for entity spotting.
+### Model Assignments (current)
+- **Generator:** `gemma4:latest` (9.6 GB) — all note drafting
+- **Critic:** `qwen3.5:9b` (6.6 GB) — fact-checking with JSON schema enforcement
 
 ### Full Local Model Inventory
 
 | Model | Size | Role in pipeline |
 |---|---|---|
-| `qwen3.5:9b` | 6.6 GB | **Primary** — entity spotting on VTT chunks |
-| `gemma4:latest` | 9.6 GB | **Backup** — alternative if Qwen quality is insufficient |
-| `qwen2.5-coder:1.5b-base` | 986 MB | Not used — code-focused, too small for entity extraction |
-| `llama3.1:8b` | 4.9 GB | Available but not needed; Qwen preferred for structured JSON output |
+| `gemma4:latest` | 9.6 GB | **Generator** — session + entity note drafting (`OLLAMA_MODEL`) |
+| `qwen3.5:9b` | 6.6 GB | **Critic** — fact-checking, JSON schema enforced (`OLLAMA_CRITIC_MODEL`) |
+| `llama3.1:8b` | 4.9 GB | **Retired** — was critic; superseded by qwen3.5:9b (stronger reasoning) |
+| `qwen2.5-coder:1.5b-base` | 986 MB | Not used — code-focused, too small for extraction |
 | `nomic-embed-text:latest` | 274 MB | **Future** — semantic search across the vault (see below) |
 
 ### Future Capability: Semantic Search (`nomic-embed-text`)
@@ -687,9 +697,13 @@ EPISODE_NOTES_DOC_ID <- "1m5xXbEsPBFdTZAUoUAgj6a14I7aF8LcszCmX-r1mBbs"
 # Add to ~/.Renviron: ANTHROPIC_API_KEY=sk-ant-...
 CLAUDE_MODEL <- "claude-sonnet-4-6"
 
-# Ollama — confirmed
-OLLAMA_BASE_URL <- "http://localhost:11434"
-OLLAMA_MODEL    <- "qwen3.5:9b"  # ✅ confirmed
+# Ollama — local, no auth required
+OLLAMA_BASE_URL     <- "http://localhost:11434"
+OLLAMA_MODEL        <- "gemma4:latest"   # generator
+OLLAMA_CRITIC_MODEL <- "qwen3.5:9b"     # critic (JSON schema enforced)
+
+# Auto-approve disabled — all notes go through human review queue
+CRITIC_AUTO_APPROVE_THRESHOLD <- Inf
 
 # Current session (update each run)
 CURRENT_SESSION <- "S2e42"
@@ -786,10 +800,10 @@ commit_vault <- function(session_id, vault_path = VAULT_PATH) {
 | NAS not mounted | Fail fast: "NAS not found at /Volumes/share. Connect via Finder first." |
 | Drive API auth expired | Prompt for interactive re-auth via `drive_auth()` |
 | Drive doc not found | Fatal error with doc ID logged |
-| Ollama not running | Log warning; fall back to Claude API for affected chunks |
-| Ollama malformed JSON | Retry once; then fall back to Claude API |
-| Claude rate limit (429) | `req_retry()` handles: 10s → 30s → 90s backoff |
-| Claude server error (5xx) | `req_retry()` retries twice; then logs and skips with review flag |
+| Ollama not running | Fail fast with clear message; no Claude fallback (local-only pipeline) |
+| Ollama malformed JSON | `parse_critic_response()` returns `parse_error` verdict → enqueued for review |
+| Claude rate limit (429) | `req_retry()` handles: 10s → 30s → 90s backoff (Claude used for escalation UI only, not primary path) |
+| Claude server error (5xx) | `req_retry()` retries twice; logs and skips (escalation path only) |
 | Alias not in registry | Skip wikilink; log unresolved alias to review_log |
 | Validation failure | Block file write; log to review_log; continue to next note |
 
@@ -1156,7 +1170,7 @@ This file is safe to commit — it contains only doc IDs, no secrets.
 
 | # | Question | Status |
 |---|---|---|
-| 1 | Exact Qwen model string? | ✅ `qwen3.5:9b` confirmed |
+| 1 | Local model assignments? | ✅ `gemma4:latest` (generator), `qwen3.5:9b` (critic) — see v4.3 changelog |
 | 2 | VTT cutover episode? | ✅ S2e34 confirmed |
 | 3 | Vault path? | ✅ `/Users/jasongrahn/R-projects/barquentine_wiki/BarquentineWiki` |
 | 4 | NAS VTT path? | ✅ `/Volumes/share/videos/` — files at root, no subdirectory |

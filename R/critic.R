@@ -91,17 +91,12 @@ review_note <- function(draft, source, model = OLLAMA_CRITIC_MODEL,
                 issues = list(), source_quotes = list()))
   }
 
-  word_count <- str_count(source, "\\S+")
-  prompt     <- .build_critic_prompt(draft, source)
+  prompt <- .build_critic_prompt(draft, source)
 
-  raw <- if (word_count > CRITIC_CONTEXT_WORD_LIMIT) {
-    claude_generate_note(prompt, CRITIC_SYSTEM_PROMPT)
-  } else {
-    ollama_generate(prompt, CRITIC_SYSTEM_PROMPT,
-                    model    = model,
-                    base_url = base_url,
-                    format   = CRITIC_RESPONSE_SCHEMA)
-  }
+  raw <- ollama_generate(prompt, CRITIC_SYSTEM_PROMPT,
+                         model    = model,
+                         base_url = base_url,
+                         format   = CRITIC_RESPONSE_SCHEMA)
 
   parse_critic_response(raw)
 }

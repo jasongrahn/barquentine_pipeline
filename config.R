@@ -41,7 +41,7 @@ CLAUDE_API_VERSION <- "2023-06-01"
 # Ollama (local — no auth required)
 # -----------------------------------------------------------------------------
 OLLAMA_BASE_URL <- "http://localhost:11434"
-OLLAMA_MODEL    <- "qwen3.5:9b"       # confirmed via `ollama list`
+OLLAMA_MODEL    <- "gemma4:latest"    # generator — largest/newest local model
 OLLAMA_TIMEOUT  <- 300                # seconds before giving up on a chunk
 
 # Entity note generation needs more tokens than session notes: longer source
@@ -61,7 +61,7 @@ CHUNK_OVERLAP_WORDS <- 150            # overlap between chunks to catch boundary
 # -----------------------------------------------------------------------------
 # Phase 2 — Critic / routing / training
 # -----------------------------------------------------------------------------
-OLLAMA_CRITIC_MODEL <- "llama3.1:8b"
+OLLAMA_CRITIC_MODEL <- "qwen3.5:9b"   # critic — stronger reasoner than llama3.1:8b
 
 GENERATOR_SYSTEM_PROMPT <- paste(
   "You are a precise structured data extractor for a D&D campaign wiki.",
@@ -69,7 +69,7 @@ GENERATOR_SYSTEM_PROMPT <- paste(
   "Do not infer or fabricate any information not present in the source text."
 )
 
-CRITIC_AUTO_APPROVE_THRESHOLD <- 0.85   # approved + >= this → write to vault
+CRITIC_AUTO_APPROVE_THRESHOLD <- Inf    # Inf = auto-approve disabled; all notes go to review queue
 CRITIC_ESCALATE_THRESHOLD     <- 0.60   # flagged + < this → Claude tiebreak
 CRITIC_REJECT_THRESHOLD       <- 0.95   # rejected + >= this → hide Approve buttons in UI
 CRITIC_FLAG_THRESHOLD         <- 0.50   # confidence < this → escalate to Claude

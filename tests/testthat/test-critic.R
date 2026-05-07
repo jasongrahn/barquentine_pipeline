@@ -127,10 +127,10 @@ test_that("review_note model defaults to OLLAMA_CRITIC_MODEL", {
   expect_equal(formals(review_note)$model, as.name("OLLAMA_CRITIC_MODEL"))
 })
 
-test_that("review_note function body routes overlimit sections to Claude", {
+test_that("review_note function body always uses Ollama (no Claude fork)", {
   fn_body <- paste(deparse(body(review_note)), collapse = " ")
-  expect_true(grepl("CRITIC_CONTEXT_WORD_LIMIT", fn_body, fixed = TRUE))
-  expect_true(grepl("claude_generate_note",      fn_body, fixed = TRUE))
+  expect_true(grepl("ollama_generate",       fn_body, fixed = TRUE))
+  expect_false(grepl("claude_generate_note", fn_body, fixed = TRUE))
 })
 
 test_that("review_note function body uses CRITIC_RESPONSE_SCHEMA for Ollama calls", {

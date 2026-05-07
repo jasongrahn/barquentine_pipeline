@@ -44,31 +44,7 @@ dispatch_note <- function(draft, verdict_list, section_id, source_text,
   }
 
   if (action == "escalate") {
-    prompt     <- .build_critic_prompt(draft, source_text)
-    claude_raw <- claude_generate_note(prompt, CRITIC_SYSTEM_PROMPT)
-    claude_verdict <- parse_critic_response(claude_raw)
-
-    combined_verdict <- verdict_list
-    combined_verdict$escalated     <- TRUE
-    combined_verdict$claude_verdict <- claude_verdict$verdict
-    combined_verdict$issues <- c(
-      verdict_list$issues,
-      paste0("[Claude] ", unlist(claude_verdict$issues))
-    )
-
-    if (claude_verdict$verdict == "approved") {
-      write_note(
-        content       = draft,
-        relative_path = file.path("sessions", paste0(section_id, ".md")),
-        dry_run       = dry_run,
-        overwrite     = TRUE,
-        .vault_path   = .vault_path,
-        .dry_run_path = .dry_run_path
-      )
-      return(invisible("escalated_approved"))
-    }
-
-    enqueue_review(draft, combined_verdict, section_id, source_text,
+    enqueue_review(draft, verdict_list, section_id, source_text,
                    note_type = "session", .queue_path = .queue_path)
     return(invisible("escalated_enqueued"))
   }
@@ -148,36 +124,7 @@ dispatch_entity_note <- function(draft, verdict_list, entity_id, entity_name,
   }
 
   if (action == "escalate") {
-    prompt         <- .build_critic_prompt(draft, source_text)
-    claude_raw     <- claude_generate_note(prompt, CRITIC_SYSTEM_PROMPT)
-    claude_verdict <- parse_critic_response(claude_raw)
-
-    combined_verdict <- verdict_list
-    combined_verdict$escalated      <- TRUE
-    combined_verdict$claude_verdict <- claude_verdict$verdict
-    combined_verdict$issues <- c(
-      verdict_list$issues,
-      paste0("[Claude] ", unlist(claude_verdict$issues))
-    )
-
-    if (claude_verdict$verdict == "approved") {
-      content <- if (note_exists(relative_path, dry_run = dry_run,
-                                  .vault_path   = .vault_path,
-                                  .dry_run_path = .dry_run_path)) {
-        existing <- readLines(get_output_path(relative_path, dry_run = dry_run,
-                                               .vault_path   = .vault_path,
-                                               .dry_run_path = .dry_run_path),
-                               warn = FALSE) |> paste(collapse = "\n")
-        supplement_note(existing, draft, source_episode_ids[[1]], note_type)
-      } else {
-        draft
-      }
-      write_note(content, relative_path, dry_run = dry_run, overwrite = TRUE,
-                 .vault_path = .vault_path, .dry_run_path = .dry_run_path)
-      return(invisible("escalated_approved"))
-    }
-
-    enqueue_review(draft, combined_verdict, entity_id, source_text,
+    enqueue_review(draft, verdict_list, entity_id, source_text,
                    note_type = note_type, entity_name = entity_name,
                    chunk_count = length(source_passages),
                    source_episode_ids = ep_ids_json,
