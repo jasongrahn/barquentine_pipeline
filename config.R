@@ -42,7 +42,7 @@ CLAUDE_API_VERSION <- "2023-06-01"
 # -----------------------------------------------------------------------------
 OLLAMA_BASE_URL <- "http://localhost:11434"
 OLLAMA_MODEL    <- "gemma4:latest"    # generator — largest/newest local model
-OLLAMA_TIMEOUT  <- 300                # seconds before giving up on a chunk
+OLLAMA_TIMEOUT  <- 90                 # seconds before giving up on a chunk; run_pipeline() retries at pipeline level
 
 # Entity note generation needs more tokens than session notes: longer source
 # passages mean more thinking budget consumed before producing actual output.
