@@ -96,7 +96,8 @@ review_note <- function(draft, source, model = OLLAMA_CRITIC_MODEL,
   raw <- ollama_generate(prompt, CRITIC_SYSTEM_PROMPT,
                          model    = model,
                          base_url = base_url,
-                         format   = CRITIC_RESPONSE_SCHEMA)
+                         format   = CRITIC_RESPONSE_SCHEMA,
+                         think    = FALSE)
 
   parse_critic_response(raw)
 }
