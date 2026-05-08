@@ -91,6 +91,11 @@ review_note <- function(draft, source, model = OLLAMA_CRITIC_MODEL,
                 issues = list(), source_quotes = list()))
   }
 
+  source_words <- str_count(source, "\\S+")
+  if (!is.na(source_words) && source_words > CRITIC_CONTEXT_WORD_LIMIT) {
+    return(claude_review_note(draft, source))
+  }
+
   prompt <- .build_critic_prompt(draft, source)
 
   raw <- ollama_generate(prompt, CRITIC_SYSTEM_PROMPT,
