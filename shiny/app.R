@@ -154,7 +154,7 @@ server <- function(input, output, session) {
         )
       ),
 
-      if (!is.na(row$existing_note) && nzchar(trimws(null_coalesce(row$existing_note, "")))) fluidRow(
+      if (isTRUE(!is.na(row$existing_note) && nzchar(trimws(null_coalesce(row$existing_note, ""))))) fluidRow(
         column(12,
           tags$details(
             tags$summary(tags$strong("Current Vault Note (before this update)")),
