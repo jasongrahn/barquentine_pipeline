@@ -170,12 +170,17 @@ list(
     pattern = map(vtt_file_paths, vtt_episode_ids)
   ),
 
-  # Aggregate passages per entity across all VTT files
+  # Aggregate passages per entity across all VTT files.
+  # Returns list(NULL) sentinel when no entities pass the frequency threshold
+  # so downstream pattern = map() targets have at least one branch to declare.
   tar_target(
     entity_passages,
-    aggregate_entity_passages(vtt_entities, alias_registry,
-                              exclusion_slugs = c(entity_exclusions, excluded_protected_slugs),
-                              protected_slugs = protected_slugs)
+    {
+      result <- aggregate_entity_passages(vtt_entities, alias_registry,
+                                          exclusion_slugs = c(entity_exclusions, excluded_protected_slugs),
+                                          protected_slugs = protected_slugs)
+      if (length(result) == 0) list(NULL) else result
+    }
   ),
 
   # Generate NPC/location/faction drafts (qwen3.5:9b)
@@ -187,6 +192,7 @@ list(
     entity_draft,
     {
       ep        <- entity_passages[[1]]
+      if (is.null(ep)) return(NULL)
       rel_path  <- .entity_relative_path(ep$entity_id, ep$note_type)
       full_path <- file.path(VAULT_PATH, rel_path)
       vault_note <- if (file.exists(full_path))
@@ -206,6 +212,8 @@ list(
     entity_verdict,
     {
       ep <- entity_passages[[1]]
+      if (is.null(ep)) return(list(verdict = "skipped", confidence = NA_real_,
+                                   issues = list(), source_quotes = list()))
       review_note(
         draft  = entity_draft,
         source = paste(ep$source_passages, collapse = "\n\n")
@@ -219,6 +227,7 @@ list(
     entity_dispatched,
     {
       ep <- entity_passages[[1]]
+      if (is.null(ep)) return(invisible(NULL))
       dispatch_entity_note(
         draft              = entity_draft,
         verdict_list       = entity_verdict,

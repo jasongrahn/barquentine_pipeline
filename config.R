@@ -73,7 +73,7 @@ CRITIC_AUTO_APPROVE_THRESHOLD <- Inf    # Inf = auto-approve disabled; all notes
 CRITIC_ESCALATE_THRESHOLD     <- 0.60   # flagged + < this → Claude tiebreak
 CRITIC_REJECT_THRESHOLD       <- 0.95   # rejected + >= this → hide Approve buttons in UI
 CRITIC_FLAG_THRESHOLD         <- 0.50   # confidence < this → escalate to Claude
-CRITIC_CONTEXT_WORD_LIMIT     <- 1500   # sections above this → Claude critic
+CRITIC_CONTEXT_WORD_LIMIT     <- 800    # sections above this → Claude critic
 
 REVIEW_QUEUE_PATH  <- "review_queue"
 TRAINING_DATA_PATH <- "training_data"
