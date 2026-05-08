@@ -85,18 +85,6 @@ test_that(".build_ollama_request sets timeout to OLLAMA_TIMEOUT seconds", {
   expect_equal(req$options$timeout_ms, OLLAMA_TIMEOUT * 1000L)
 })
 
-test_that(".build_ollama_request configures retry with 3 attempts", {
-  req <- .build_ollama_request("p", "s", OLLAMA_MODEL, OLLAMA_BASE_URL)
-  expect_equal(req$policies$retry_max_tries, 3)
-})
-
-test_that(".build_ollama_request backoff produces 5s, 10s, 20s schedule", {
-  req     <- .build_ollama_request("p", "s", OLLAMA_MODEL, OLLAMA_BASE_URL)
-  backoff <- req$policies$retry_backoff
-  expect_equal(backoff(1),  5)
-  expect_equal(backoff(2), 10)
-  expect_equal(backoff(3), 20)
-})
 
 # --- Response parsing (mocked — no live Ollama required) ---------------------
 

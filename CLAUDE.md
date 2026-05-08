@@ -11,7 +11,11 @@ Barquentine Pipeline reads D&D session notes from a Google Doc, generates struct
 All commands run from an R console in the project root.
 
 ```r
-# Run the full pipeline
+# Run the full pipeline with automatic retry for Ollama timeouts
+source("scripts/run_pipeline.R")
+run_pipeline()
+
+# Or directly, if you just want one pass (error="continue" is set in tar_option_set):
 targets::tar_make()
 
 # Visualize the dependency graph

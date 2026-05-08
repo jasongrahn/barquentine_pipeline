@@ -154,6 +154,17 @@ server <- function(input, output, session) {
         )
       ),
 
+      if (isTRUE(!is.na(row$existing_note) && nzchar(trimws(null_coalesce(row$existing_note, ""))))) fluidRow(
+        column(12,
+          tags$details(
+            tags$summary(tags$strong("Current Vault Note (before this update)")),
+            tags$pre(style = "max-height: 300px; overflow-y: auto; background: #e8f4f8;
+                              border-left: 3px solid #17a2b8; padding: 8px; margin-top: 6px;",
+                     row$existing_note)
+          )
+        )
+      ),
+
       if (length(issues) > 0 || length(source_quotes) > 0) tags$div(
         class = "critic-panel",
         h5("Critic analysis:"),

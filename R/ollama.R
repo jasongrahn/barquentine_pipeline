@@ -22,8 +22,7 @@ library(purrr)
   request(paste0(base_url, "/api/chat")) |>
     req_headers("content-type" = "application/json") |>
     req_body_json(body) |>
-    req_timeout(OLLAMA_TIMEOUT) |>
-    req_retry(max_tries = 3, backoff = \(i) 5 * 2^(i - 1))
+    req_timeout(OLLAMA_TIMEOUT)
 }
 
 ollama_generate <- function(prompt, system_prompt, model = OLLAMA_MODEL,

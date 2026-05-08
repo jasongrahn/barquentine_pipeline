@@ -17,6 +17,18 @@ library(purrr)
     req_retry(max_tries = 3, backoff = \(i) 10 * 3^(i - 1))
 }
 
+claude_review_note <- function(draft, source, model = CLAUDE_MODEL) {
+  if (is.null(draft)) {
+    return(list(verdict = "skipped", confidence = NA_real_,
+                issues = list(), source_quotes = list()))
+  }
+  prompt <- paste0("SOURCE:\n", source, "\n\nDRAFT:\n", draft)
+  raw    <- claude_generate_note(prompt, CRITIC_SYSTEM_PROMPT, model = model)
+  result <- parse_critic_response(raw)
+  result$escalated <- TRUE
+  result
+}
+
 claude_generate_note <- function(prompt, system_prompt, model = CLAUDE_MODEL) {
   api_key <- Sys.getenv("ANTHROPIC_API_KEY")
   if (nchar(api_key) == 0) {

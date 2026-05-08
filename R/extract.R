@@ -68,7 +68,7 @@ generate_note <- function(episode_id, section_text,
                           few_shot_paths = NULL,
                           model       = OLLAMA_MODEL,
                           base_url    = OLLAMA_BASE_URL,
-                          num_predict = 800L) {
+                          num_predict = 2400L) {
   if (is_sparse(section_text)) return(NULL)
   prompt <- session_prompt(episode_id, section_text, few_shot_paths = few_shot_paths)
   ollama_generate(prompt, GENERATOR_SYSTEM_PROMPT, model = model, base_url = base_url,

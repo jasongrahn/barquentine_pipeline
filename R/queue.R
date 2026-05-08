@@ -34,6 +34,7 @@ enqueue_review <- function(draft, verdict_list, section_id, source_text,
                            entity_name        = NA_character_,
                            chunk_count        = NA_integer_,
                            source_episode_ids = NA_character_,
+                           existing_note      = NA_character_,
                            status             = "pending",
                            .queue_path        = REVIEW_QUEUE_PATH) {
   dir_create(file.path(.queue_path, "staging"), recurse = TRUE)
@@ -72,6 +73,8 @@ enqueue_review <- function(draft, verdict_list, section_id, source_text,
                            else as.integer(chunk_count),
     source_episode_ids = if (length(source_episode_ids) == 1 && is.na(source_episode_ids))
                            NA_character_ else as.character(source_episode_ids),
+    existing_note      = if (length(existing_note) == 1 && is.na(existing_note))
+                           NA_character_ else as.character(existing_note),
     status_detail      = NA_character_,
     merged_into        = NA_character_,
     last_action_at     = NA_character_,
