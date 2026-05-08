@@ -69,8 +69,13 @@ dispatch_entity_note <- function(draft, verdict_list, entity_id, entity_name,
                                   .vault_path   = VAULT_PATH,
                                   .dry_run_path = DRY_RUN_PATH,
                                   .queue_path   = REVIEW_QUEUE_PATH) {
-  source_text    <- paste(source_passages, collapse = "\n\n---\n\n")
-  ep_ids_json    <- toJSON(source_episode_ids, auto_unbox = TRUE)
+  source_text   <- paste(source_passages, collapse = "\n\n---\n\n")
+  ep_ids_json   <- toJSON(source_episode_ids, auto_unbox = TRUE)
+  relative_path <- .entity_relative_path(entity_id, note_type)
+  full_path     <- get_output_path(relative_path, dry_run = dry_run,
+                                   .vault_path = .vault_path, .dry_run_path = .dry_run_path)
+  existing_note <- if (file.exists(full_path))
+    paste(readLines(full_path, warn = FALSE), collapse = "\n") else NA_character_
 
   if (is.null(draft) || !nzchar(trimws(draft))) {
     enqueue_review(
@@ -84,6 +89,7 @@ dispatch_entity_note <- function(draft, verdict_list, entity_id, entity_name,
       entity_name        = entity_name,
       chunk_count        = length(source_passages),
       source_episode_ids = ep_ids_json,
+      existing_note      = existing_note,
       status             = "generation_failed",
       .queue_path        = .queue_path
     )
@@ -99,26 +105,14 @@ dispatch_entity_note <- function(draft, verdict_list, entity_id, entity_name,
                    note_type = note_type, entity_name = entity_name,
                    chunk_count = length(source_passages),
                    source_episode_ids = ep_ids_json,
+                   existing_note = existing_note,
                    status = "critic_rejected",
                    .queue_path = .queue_path)
     return(invisible("critic_rejected"))
   }
 
-  relative_path <- .entity_relative_path(entity_id, note_type)
-
   if (action == "auto_approve") {
-    content <- if (note_exists(relative_path, dry_run = dry_run,
-                                .vault_path   = .vault_path,
-                                .dry_run_path = .dry_run_path)) {
-      existing <- readLines(get_output_path(relative_path, dry_run = dry_run,
-                                             .vault_path   = .vault_path,
-                                             .dry_run_path = .dry_run_path),
-                             warn = FALSE) |> paste(collapse = "\n")
-      supplement_note(existing, draft, source_episode_ids[[1]], note_type)
-    } else {
-      draft
-    }
-    write_note(content, relative_path, dry_run = dry_run, overwrite = TRUE,
+    write_note(draft, relative_path, dry_run = dry_run, overwrite = TRUE,
                .vault_path = .vault_path, .dry_run_path = .dry_run_path)
     return(invisible("auto_approved"))
   }
@@ -128,6 +122,7 @@ dispatch_entity_note <- function(draft, verdict_list, entity_id, entity_name,
                    note_type = note_type, entity_name = entity_name,
                    chunk_count = length(source_passages),
                    source_episode_ids = ep_ids_json,
+                   existing_note = existing_note,
                    .queue_path = .queue_path)
     return(invisible("escalated_enqueued"))
   }
@@ -136,6 +131,7 @@ dispatch_entity_note <- function(draft, verdict_list, entity_id, entity_name,
                  note_type = note_type, entity_name = entity_name,
                  chunk_count = length(source_passages),
                  source_episode_ids = ep_ids_json,
+                 existing_note = existing_note,
                  .queue_path = .queue_path)
   invisible("enqueued")
 }

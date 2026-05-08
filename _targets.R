@@ -180,14 +180,21 @@ list(
   # Generate NPC/location/faction drafts (qwen3.5:9b)
   # entity_passages is an unnamed list; targets slices with [i] giving list-of-1,
   # so [[1]] is needed to unwrap the record in each branch.
+  # Existing vault note is passed as prior_draft so the model produces a coherent
+  # updated note rather than a fragment to be appended.
   tar_target(
     entity_draft,
     {
-      ep <- entity_passages[[1]]
+      ep        <- entity_passages[[1]]
+      rel_path  <- .entity_relative_path(ep$entity_id, ep$note_type)
+      full_path <- file.path(VAULT_PATH, rel_path)
+      vault_note <- if (file.exists(full_path))
+        paste(readLines(full_path, warn = FALSE), collapse = "\n") else NULL
       generate_entity_note(
         entity_name     = ep$entity_name,
         source_passages = ep$source_passages,
-        note_type       = ep$note_type
+        note_type       = ep$note_type,
+        prior_draft     = vault_note
       )
     },
     pattern = map(entity_passages)
