@@ -12,29 +12,30 @@ Built for the [Barquentine](https://github.com/jasongrahn/barquentine_wiki) Spel
 
 ```
 Source B (Google Doc)          Source C (VTT transcripts, NAS)
-   session notes                  7 episodes of table talk
+   session notes                  episode table talk
         │                                    │
         ▼                                    ▼
-  parse sections               chunk → entity-spot (llama3.1:8b)
+  parse sections               chunk → entity-spot (qwen3.5:9b)
         │                                    │
         └──────────────┬─────────────────────┘
                        ▼
-             draft note (qwen3.5:9b)
+             draft note (gemma4:latest)
                        │
-             fact-check (llama3.1:8b)
+             fact-check (qwen3.5:9b)
+                       │
+                  Shiny review UI
+                       │
+              approve / edit / reject
                        │
               ┌────────┴────────┐
-          confident?         flagged?
+          accepted           rejected
               │                  │
-           auto-write      Shiny review UI
-           to vault              │
-                         accept / edit / reject
-                                 │
-                         training_data/sft.jsonl
-                         training_data/dpo.jsonl
+         vault write        training_data/dpo.jsonl
+         + git commit
+         training_data/sft.jsonl
 ```
 
-Session notes land in `sessions/`. Entity notes land in `npcs/`, `locations/`, or `factions/`. Approved notes are git-committed to the vault automatically.
+Session notes land in `sessions/`. Entity notes land in `npcs/`, `locations/`, or `factions/`. All notes pass through the Shiny review UI — auto-approve is currently disabled. Approved notes are git-committed to the vault automatically.
 
 ---
 
@@ -43,7 +44,7 @@ Session notes land in `sessions/`. Entity notes land in `npcs/`, `locations/`, o
 | Thing | What it does here |
 |---|---|
 | [`targets`](https://docs.ropensci.org/targets/) | Pipeline orchestration — incremental, cached, reproducible |
-| [Ollama](https://ollama.com/) | Local LLM server — qwen3.5:9b + llama3.1:8b |
+| [Ollama](https://ollama.com/) | Local LLM server — gemma4:latest (generator) + qwen3.5:9b (critic/entity-spot) |
 | Claude API | Escalation tiebreak for low-confidence flagged notes |
 | Google Drive API | Pulls session notes from the campaign doc |
 | Shiny | Human review UI (port 7474) |
@@ -56,8 +57,8 @@ Session notes land in `sessions/`. Entity notes land in `npcs/`, `locations/`, o
 ```r
 # 1. Mount the NAS (Finder → Go → Connect to Server → smb://LS220D43E.local/share)
 # 2. Set the episode in config.R
-CURRENT_SESSION <- "S2e40"
-ACTIVE_EPISODES <- c("S2e40")   # NULL for all episodes
+CURRENT_SESSION <- "S2e42"
+ACTIVE_EPISODES <- c("S2e42")   # NULL for all episodes
 DRY_RUN         <- TRUE         # flip to FALSE when ready
 
 # 3. Run
@@ -76,9 +77,10 @@ See `CLAUDE.md` for full commands and architecture details.
 | Doc | What's in it |
 |---|---|
 | [`docs/architecture.md`](docs/architecture.md) | Full design spec — sources, vault structure, note templates, all phases |
-| [`docs/phase2_design.md`](docs/phase2_design.md) | Generator/critic model decisions, routing logic, Ollama format rationale |
-| [`docs/phase3_design.md`](docs/phase3_design.md) | VTT entity pipeline design — key decisions and gotchas |
-| [`docs/phase3_performance.md`](docs/phase3_performance.md) | Why Phase 3 is slow and what to do about it |
+| [`docs/architecture_llm_evaluation.md`](docs/architecture_llm_evaluation.md) | Model evaluation notes — why each model is assigned its role |
+| [`docs/phase3.md`](docs/phase3.md) | VTT entity pipeline — design decisions, performance analysis, and fix execution brief |
+| [`docs/review_queue_ui.md`](docs/review_queue_ui.md) | Shiny review UI — v1 design, v1.1 additions, and patch notes |
+| [`docs/phase_next_backlog.md`](docs/phase_next_backlog.md) | Confirmed feature requests for future phases |
 | [`LESSONS.md`](LESSONS.md) | Non-obvious gotchas in R, targets, Shiny, and Ollama |
 
 ---
@@ -87,4 +89,4 @@ See `CLAUDE.md` for full commands and architecture details.
 
 1. **Never fabricate.** Every prompt explicitly forbids it. Every note is traceable to a source line.
 2. **Dry run first.** `DRY_RUN <- TRUE` writes to `/tmp/barquentine-preview/` instead of the vault.
-3. **Don't swap models** without reading `docs/phase2_design.md` first.
+3. **Don't swap models** without reading `docs/architecture_llm_evaluation.md` first.

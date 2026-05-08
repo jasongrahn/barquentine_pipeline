@@ -412,10 +412,10 @@ server <- function(input, output, session) {
       title = "Reject Entity",
       selectInput("reject_reason", "Reason",
                   choices = c(
-                    "Garbage / LLM refusal"      = "rejected_garbage",
-                    "Duplicate of another entity" = "rejected_duplicate",
-                    "Not a real entity"           = "rejected_not_an_entity",
-                    "Out of scope"                = "rejected_out_of_scope"
+                    "Bad generation (garbled text or model refusal)" = "rejected_garbage",
+                    "Duplicate of another entity"                    = "rejected_duplicate",
+                    "Not a real entity (noise, pronoun, generic term)" = "rejected_not_an_entity",
+                    "Out of scope for this wiki"                     = "rejected_out_of_scope"
                   )),
       footer = tagList(
         modalButton("Cancel"),
