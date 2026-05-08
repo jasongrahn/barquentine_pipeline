@@ -463,15 +463,24 @@ server <- function(input, output, session) {
 
     issues   <- .parse_json_col(row$issues)
 
+    is_session <- identical(row$note_type, "session") || is.na(row$note_type)
+
     new_draft <- tryCatch({
-      generate_entity_note(
-        entity_name     = .nc(row$entity_name, row$section_id),
-        source_passages = passages,
-        note_type       = .nc(row$note_type, "npc"),
-        prior_draft     = .nc(row$draft, ""),
-        critic_findings = issues,
-        user_feedback   = feedback
-      )
+      if (is_session) {
+        generate_note(
+          episode_id   = row$section_id,
+          section_text = paste(passages, collapse = "\n\n")
+        )
+      } else {
+        generate_entity_note(
+          entity_name     = .nc(row$entity_name, row$section_id),
+          source_passages = passages,
+          note_type       = .nc(row$note_type, "npc"),
+          prior_draft     = .nc(row$draft, ""),
+          critic_findings = issues,
+          user_feedback   = feedback
+        )
+      }
     }, error = function(e) {
       action_msg_rv(list(text = paste0("Generation error: ", conditionMessage(e)),
                          color = "#dc3545"))
