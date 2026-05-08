@@ -76,9 +76,10 @@ See `CLAUDE.md` for full commands and architecture details.
 | Doc | What's in it |
 |---|---|
 | [`docs/architecture.md`](docs/architecture.md) | Full design spec — sources, vault structure, note templates, all phases |
-| [`docs/phase2_design.md`](docs/phase2_design.md) | Generator/critic model decisions, routing logic, Ollama format rationale |
-| [`docs/phase3_design.md`](docs/phase3_design.md) | VTT entity pipeline design — key decisions and gotchas |
-| [`docs/phase3_performance.md`](docs/phase3_performance.md) | Why Phase 3 is slow and what to do about it |
+| [`docs/architecture_llm_evaluation.md`](docs/architecture_llm_evaluation.md) | Model evaluation notes — why each model is assigned its role |
+| [`docs/phase3.md`](docs/phase3.md) | VTT entity pipeline — design decisions, performance analysis, and fix execution brief |
+| [`docs/review_queue_ui.md`](docs/review_queue_ui.md) | Shiny review UI — v1 design, v1.1 additions, and patch notes |
+| [`docs/phase_next_backlog.md`](docs/phase_next_backlog.md) | Confirmed feature requests for future phases |
 | [`LESSONS.md`](LESSONS.md) | Non-obvious gotchas in R, targets, Shiny, and Ollama |
 
 ---
