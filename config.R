@@ -61,7 +61,7 @@ CHUNK_OVERLAP_WORDS <- 150            # overlap between chunks to catch boundary
 # -----------------------------------------------------------------------------
 # Phase 2 — Critic / routing / training
 # -----------------------------------------------------------------------------
-OLLAMA_CRITIC_MODEL <- "qwen3.5:9b"   # critic — stronger reasoner than llama3.1:8b
+OLLAMA_CRITIC_MODEL <- "llama3.1:8b"  # critic — structured JSON output, reliable under load
 
 GENERATOR_SYSTEM_PROMPT <- paste(
   "You are a precise structured data extractor for a D&D campaign wiki.",
