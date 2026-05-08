@@ -89,6 +89,12 @@ CURRENT_SESSION <- "S2e42"           # ← update this each session
 DRY_RUN         <- FALSE            # ← flip to FALSE when ready for live run
 DRY_RUN_PATH    <- "/tmp/barquentine-preview"
 
+# -----------------------------------------------------------------------------
+# Regeneration queue
+# -----------------------------------------------------------------------------
+REGEN_MAX_COUNT <- 3L                          # hard stop after this many regens per item
+REGEN_LOCK_FILE <- "review_queue/.regen.lock"  # sentinel touched by bg job; relative to project root
+
 # VTT episodes to process in Phase 3. NULL = all confirmed episodes.
 # Set to a character vector to limit the run, e.g. c("S2e34") for one episode.
 ACTIVE_EPISODES <- NULL
