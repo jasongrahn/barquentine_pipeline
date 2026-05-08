@@ -10,7 +10,7 @@
 
 run_pipeline <- function(max_retries = 3) {
   for (i in seq_len(max_retries)) {
-    targets::tar_make(error = "continue")
+    targets::tar_make()
     failed <- targets::tar_errored()
     if (length(failed) == 0) break
     message(sprintf(

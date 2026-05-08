@@ -3,7 +3,8 @@ library(tarchetypes)
 
 tar_option_set(
   packages = c("httr2", "googledrive", "jsonlite", "readr",
-               "stringr", "purrr", "fs", "gert", "glue", "yaml", "dplyr")
+               "stringr", "purrr", "fs", "gert", "glue", "yaml", "dplyr"),
+  error = "continue"
 )
 
 source("config.R")

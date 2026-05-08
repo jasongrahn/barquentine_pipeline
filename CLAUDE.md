@@ -15,8 +15,8 @@ All commands run from an R console in the project root.
 source("scripts/run_pipeline.R")
 run_pipeline()
 
-# Or directly, if you just want one pass:
-targets::tar_make(error = "continue")
+# Or directly, if you just want one pass (error="continue" is set in tar_option_set):
+targets::tar_make()
 
 # Visualize the dependency graph
 targets::tar_visnetwork()
