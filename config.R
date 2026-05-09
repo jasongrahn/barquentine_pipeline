@@ -90,6 +90,13 @@ DRY_RUN         <- FALSE            # ← flip to FALSE when ready for live run
 DRY_RUN_PATH    <- "/tmp/barquentine-preview"
 
 # -----------------------------------------------------------------------------
+# Recursive critic loop
+# -----------------------------------------------------------------------------
+DRAFT_MAX_ITERATIONS          <- 1L   # rollout value; raise to 5L after validating on real data
+PROCESS_ONE_SESSION           <- TRUE # enforce strict one-session-at-a-time ordering
+OLLAMA_TIMEOUT_BACKOFF_SECONDS <- 30L  # sleep after a section that had an Ollama timeout
+
+# -----------------------------------------------------------------------------
 # Regeneration queue
 # -----------------------------------------------------------------------------
 REGEN_MAX_COUNT <- 3L                          # hard stop after this many regens per item
