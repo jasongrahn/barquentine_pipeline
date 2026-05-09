@@ -58,6 +58,44 @@ write_negative <- function(section_id, prompt, draft, reject_reason = NULL,
   invisible(section_id)
 }
 
+# Walks an iteration_log (list of per-iteration records) and writes intermediate
+# DPO pairs (when a revision improved confidence) or negative examples (when it
+# stayed flat or dropped). Returns the count of training records written.
+write_intermediate_pairs_from_log <- function(section_id, prompt, iteration_log,
+                                               .path = TRAINING_DATA_PATH) {
+  if (!is.list(iteration_log) || length(iteration_log) < 2L) return(invisible(0L))
+
+  count <- 0L
+  for (i in seq_len(length(iteration_log) - 1L)) {
+    prev <- iteration_log[[i]]
+    nxt  <- iteration_log[[i + 1L]]
+
+    prev_draft <- prev$draft
+    nxt_draft  <- nxt$draft
+    prev_conf  <- prev$confidence
+    nxt_conf   <- nxt$confidence
+
+    if (is.null(prev_draft) || is.null(nxt_draft)) next
+    if (length(prev_draft) == 0L || length(nxt_draft) == 0L) next
+    if (is.na(prev_draft) || is.na(nxt_draft))               next
+    if (!nzchar(prev_draft) || !nzchar(nxt_draft))           next
+    if (identical(prev_draft, nxt_draft))                    next
+    if (is.null(prev_conf) || is.null(nxt_conf))             next
+    if (is.na(prev_conf)  || is.na(nxt_conf))                next
+
+    if (nxt_conf > prev_conf) {
+      write_dpo(section_id, prompt, chosen = nxt_draft, rejected = prev_draft,
+                .path = .path)
+    } else {
+      write_negative(section_id, prompt, draft = nxt_draft,
+                     reject_reason = "revision_did_not_improve",
+                     .path = .path)
+    }
+    count <- count + 1L
+  }
+  invisible(count)
+}
+
 # Reads all resolved, not-yet-exported queue items and writes training pairs.
 # Returns the count of items exported.
 generate_training_data <- function(.queue_path    = REVIEW_QUEUE_PATH,
@@ -91,6 +129,15 @@ generate_training_data <- function(.queue_path    = REVIEW_QUEUE_PATH,
       reason <- if ("reject_reason" %in% names(row) && !is.na(row$reject_reason))
         row$reject_reason else NULL
       write_negative(sid, prompt, draft, reject_reason = reason, .path = .training_path)
+    }
+
+    # Walk iteration_log for intermediate revision pairs (Phase 3.1).
+    iter_log <- if ("iteration_log" %in% names(row) && !is.na(row$iteration_log))
+      tryCatch(fromJSON(as.character(row$iteration_log), simplifyVector = FALSE),
+               error = function(e) NULL) else NULL
+    if (!is.null(iter_log) && length(iter_log) >= 2L) {
+      write_intermediate_pairs_from_log(sid, prompt, iter_log,
+                                         .path = .training_path)
     }
 
     df$training_exported[df$section_id == sid] <- TRUE

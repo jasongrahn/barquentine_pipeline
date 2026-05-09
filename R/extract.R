@@ -241,6 +241,7 @@ draft_with_refinement <- function(source_text, section_id, note_type = "session"
       issues_count        = length(v_issues),
       issues_raw          = v_issues,
       quotes_raw          = v_quotes,
+      draft               = if (is.character(draft)) draft else NA_character_,
       escalated_to_claude = escalated,
       escalation_reason   = if (escalated && !is.null(escalation_reason))
                               escalation_reason else NULL,
@@ -280,6 +281,7 @@ draft_with_refinement <- function(source_text, section_id, note_type = "session"
       issues_count        = length(c_issues),
       issues_raw          = c_issues,
       quotes_raw          = c_quotes,
+      draft               = if (is.character(best_draft)) best_draft else NA_character_,
       escalated_to_claude = TRUE,
       escalation_reason   = "cap_hit",
       timestamp           = Sys.time()

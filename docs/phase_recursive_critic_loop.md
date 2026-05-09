@@ -383,11 +383,11 @@ New file `R/story.R`.
 
 ### Step 3.1 — `training.R`: Intermediate DPO pairs from iteration log
 
-- [ ] Walk `iteration_log` for each section
-- [ ] For each iteration where critic flagged and a revision improved confidence:
+- [x] Walk `iteration_log` for each section
+- [x] For each iteration where critic flagged and a revision improved confidence:
   write DPO pair (`rejected` = pre-revision draft, `chosen` = post-revision draft)
-- [ ] Where confidence stayed flat or dropped: write negative example instead
-- [ ] Only pairs where confidence improved are written as DPO
+- [x] Where confidence stayed flat or dropped: write negative example instead
+- [x] Only pairs where confidence improved are written as DPO
 
 ### Step 3.2 — `training.R`: Claude escalation DPO pairs with `source` field
 
