@@ -13,6 +13,7 @@ source("R/writer.R")
 source("R/review.R")
 source("R/training.R")
 source("R/regen.R")
+source("shiny/iteration_metadata.R")
 library(callr)
 
 # Capture absolute paths now — before Shiny's session machinery can reset wd.
@@ -43,6 +44,12 @@ ui <- fluidPage(
     .regen-status { font-size: 0.85em; margin-top: 4px; }
     .regen-queued { color: #6c757d; font-weight: bold; }
     .regen-running { color: #007bff; font-weight: bold; }
+    .iter-meta { margin: -6px 0 8px 0; font-size: 0.85em; color: #555; }
+    .iter-badge { display: inline-block; padding: 2px 8px; margin-right: 6px;
+                  background: #eef2f7; border-radius: 10px; }
+    .claude-badge { background: #ede0f7; color: #5a2a8a; font-weight: bold; }
+    .reason-badge { background: transparent; color: #777; font-style: italic;
+                    padding-left: 0; }
   "))),
 
   titlePanel("Barquentine — Review Queue"),
@@ -149,7 +156,14 @@ server <- function(input, output, session) {
 
     tagList(
       fluidRow(
-        column(8, h3(row$section_id)),
+        column(8,
+          h3(row$section_id),
+          .format_iteration_badges(
+            iteration_count    = row$iteration_count,
+            claude_used        = row$claude_used,
+            iteration_log_json = row$iteration_log
+          )
+        ),
         column(4, style = "text-align: right; padding-top: 20px;",
           tags$span(
             class = verdict_class,

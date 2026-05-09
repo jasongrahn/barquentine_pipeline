@@ -431,9 +431,12 @@ Print after each `run_pipeline()` call:
 
 ### Step 4.2 — `shiny/app.R`: Iteration metadata on review card
 
-- [ ] Surface `iteration_count` on the review card (e.g., "3 drafts before routing")
-- [ ] Surface `claude_used` (e.g., "Claude revised" badge)
-- [ ] Surface `escalation_reason` when relevant ("timed out" vs "cap hit")
+- [x] Surface `iteration_count` on the review card (e.g., "3 drafts before routing")
+- [x] Surface `claude_used` (e.g., "Claude revised" badge)
+- [x] Surface `escalation_reason` when relevant ("timed out" vs "cap hit")
+  *(Helpers in `shiny/iteration_metadata.R`; escalation_reason parsed from
+  the row's `iteration_log` JSON since it isn't a top-level queue column.
+  Wired into the review card header in `shiny/app.R`.)*
 
 **Dependencies:** Step 0.7 (queue columns must exist)
 
