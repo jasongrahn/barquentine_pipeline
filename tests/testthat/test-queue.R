@@ -357,6 +357,59 @@ test_that("start_regen_job returns NULL when no regen_queued items", {
   expect_null(result)
 })
 
+# --- Phase 0 columns: iteration_count, claude_used, iteration_log ------------
+
+test_that("enqueue_review writes iteration_count=1 by default", {
+  tmp <- local_tempdir()
+  enqueue_review("d", make_verdict(), "S2e10", "s", .queue_path = tmp)
+  row <- readr::read_csv(file.path(tmp, "staging", "S2e10.csv"), show_col_types = FALSE)
+  expect_equal(row$iteration_count, 1L)
+})
+
+test_that("enqueue_review writes claude_used=FALSE by default", {
+  tmp <- local_tempdir()
+  enqueue_review("d", make_verdict(), "S2e10", "s", .queue_path = tmp)
+  row <- readr::read_csv(file.path(tmp, "staging", "S2e10.csv"), show_col_types = FALSE)
+  expect_false(row$claude_used)
+})
+
+test_that("enqueue_review writes iteration_log='[]' by default", {
+  tmp <- local_tempdir()
+  enqueue_review("d", make_verdict(), "S2e10", "s", .queue_path = tmp)
+  row <- readr::read_csv(file.path(tmp, "staging", "S2e10.csv"), show_col_types = FALSE)
+  expect_equal(row$iteration_log, "[]")
+})
+
+test_that("enqueue_review accepts non-default iteration_count and claude_used", {
+  tmp <- local_tempdir()
+  enqueue_review("d", make_verdict(), "S2e10", "s",
+                 iteration_count = 3L, claude_used = TRUE,
+                 iteration_log = '[{"iteration":1}]',
+                 .queue_path = tmp)
+  row <- readr::read_csv(file.path(tmp, "staging", "S2e10.csv"), show_col_types = FALSE)
+  expect_equal(row$iteration_count, 3L)
+  expect_true(row$claude_used)
+  expect_equal(row$iteration_log, '[{"iteration":1}]')
+})
+
+test_that(".fill_missing_columns adds iteration_count, claude_used, iteration_log defaults", {
+  df <- data.frame(section_id = "S2e10", status = "pending", stringsAsFactors = FALSE)
+  df <- .fill_missing_columns(df)
+  expect_equal(df$iteration_count, 1L)
+  expect_false(df$claude_used)
+  expect_equal(df$iteration_log, "[]")
+})
+
+test_that(".fill_missing_columns preserves existing Phase 0 column values", {
+  df <- data.frame(section_id = "S2e10", iteration_count = 3L,
+                   claude_used = TRUE, iteration_log = "[1,2,3]",
+                   stringsAsFactors = FALSE)
+  df <- .fill_missing_columns(df)
+  expect_equal(df$iteration_count, 3L)
+  expect_true(df$claude_used)
+  expect_equal(df$iteration_log, "[1,2,3]")
+})
+
 test_that("start_regen_job flips regen_queued rows to regenerating", {
   tmp <- local_tempdir()
   enqueue_review("d", make_verdict(), "S2e10", "s", .queue_path = tmp)

@@ -23,7 +23,11 @@ library(fs)
     slug_override      = NA_character_,
     user_feedback      = NA_character_,
     regen_count        = 0L,
-    reject_reason      = NA_character_
+    reject_reason      = NA_character_,
+    # Recursive critic loop columns — default for rows written before Phase 0
+    iteration_count    = 1L,
+    claude_used        = FALSE,
+    iteration_log      = "[]"
   )
   for (col in names(defaults)) {
     if (!col %in% names(df)) df[[col]] <- defaults[[col]]
@@ -39,6 +43,9 @@ enqueue_review <- function(draft, verdict_list, section_id, source_text,
                            source_episode_ids = NA_character_,
                            existing_note      = NA_character_,
                            status             = "pending",
+                           iteration_count    = 1L,
+                           claude_used        = FALSE,
+                           iteration_log      = "[]",
                            .queue_path        = REVIEW_QUEUE_PATH) {
   dir_create(file.path(.queue_path, "staging"), recurse = TRUE)
 
@@ -81,6 +88,9 @@ enqueue_review <- function(draft, verdict_list, section_id, source_text,
     status_detail      = NA_character_,
     merged_into        = NA_character_,
     last_action_at     = NA_character_,
+    iteration_count    = as.integer(iteration_count),
+    claude_used        = isTRUE(claude_used),
+    iteration_log      = as.character(iteration_log),
     stringsAsFactors   = FALSE
   )
 
@@ -126,7 +136,10 @@ read_queue <- function(.queue_path = REVIEW_QUEUE_PATH, status = "pending") {
       chunk_count = integer(), source_episode_ids = character(),
       status_detail = character(), merged_into = character(),
       last_action_at = character(), user_feedback = character(),
-      regen_count = integer(), stringsAsFactors = FALSE
+      regen_count = integer(),
+      iteration_count = integer(), claude_used = logical(),
+      iteration_log = character(),
+      stringsAsFactors = FALSE
     ))
   }
   df <- read_csv(csv_path, show_col_types = FALSE)
