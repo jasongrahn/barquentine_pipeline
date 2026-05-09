@@ -182,54 +182,46 @@ list(
     }
   ),
 
-  # Generate NPC/location/faction drafts (qwen3.5:9b)
-  # entity_passages is an unnamed list; targets slices with [i] giving list-of-1,
-  # so [[1]] is needed to unwrap the record in each branch.
-  # Existing vault note is passed as prior_draft so the model produces a coherent
-  # updated note rather than a fragment to be appended.
+  # Entity notes — inner loop: generate → critic → revise (Phase 1)
+  # draft_with_refinement() owns the full generate→critic→revise cycle for all
+  # note types. entity_passages is an unnamed list; [[1]] unwraps the record.
+  # Existing vault note is passed as prior_draft so generation produces a coherent
+  # updated note rather than a fragment.
   tar_target(
-    entity_draft,
+    entity_refined,
     {
-      ep        <- entity_passages[[1]]
-      if (is.null(ep)) return(NULL)
-      rel_path  <- .entity_relative_path(ep$entity_id, ep$note_type)
-      full_path <- file.path(VAULT_PATH, rel_path)
+      ep <- entity_passages[[1]]
+      if (is.null(ep)) return(list(
+        best_draft = NULL, best_confidence = -Inf,
+        final_verdict = list(verdict = "skipped", confidence = NA_real_,
+                             issues = list(), source_quotes = list()),
+        iteration_log = list(), iteration_count = 1L,
+        claude_used = FALSE, escalation_reason = NULL
+      ))
+      rel_path   <- .entity_relative_path(ep$entity_id, ep$note_type)
+      full_path  <- file.path(VAULT_PATH, rel_path)
       vault_note <- if (file.exists(full_path))
         paste(readLines(full_path, warn = FALSE), collapse = "\n") else NULL
-      generate_entity_note(
+      draft_with_refinement(
+        source_text     = paste(ep$source_passages, collapse = "\n\n---\n\n"),
+        section_id      = ep$entity_id,
+        note_type       = ep$note_type,
         entity_name     = ep$entity_name,
         source_passages = ep$source_passages,
-        note_type       = ep$note_type,
         prior_draft     = vault_note
       )
     },
     pattern = map(entity_passages)
   ),
 
-  # Critic — same llama3.1:8b critic as session notes
-  tar_target(
-    entity_verdict,
-    {
-      ep <- entity_passages[[1]]
-      if (is.null(ep)) return(list(verdict = "skipped", confidence = NA_real_,
-                                   issues = list(), source_quotes = list()))
-      review_note(
-        draft  = entity_draft,
-        source = paste(ep$source_passages, collapse = "\n\n")
-      )
-    },
-    pattern = map(entity_draft, entity_passages)
-  ),
-
-  # Dispatch — supplement existing note or create fresh; enqueue for review
+  # Dispatch — best_draft from inner loop → staging queue
   tar_target(
     entity_dispatched,
     {
       ep <- entity_passages[[1]]
       if (is.null(ep)) return(invisible(NULL))
       dispatch_entity_note(
-        draft              = entity_draft,
-        verdict_list       = entity_verdict,
+        refinement_result  = entity_refined,
         entity_id          = ep$entity_id,
         entity_name        = ep$entity_name,
         note_type          = ep$note_type,
@@ -237,7 +229,7 @@ list(
         source_episode_ids = ep$source_episode_ids
       )
     },
-    pattern = map(entity_draft, entity_verdict, entity_passages)
+    pattern = map(entity_refined, entity_passages)
   ),
 
   # Consolidate entity staging files into queue.csv

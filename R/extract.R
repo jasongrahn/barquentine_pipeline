@@ -143,9 +143,12 @@ revise_note <- function(draft, issues, quotes, source_text,
 }
 
 draft_with_refinement <- function(source_text, section_id, note_type = "session",
-                                   few_shot_paths = NULL,
-                                   model          = OLLAMA_MODEL,
-                                   base_url       = OLLAMA_BASE_URL) {
+                                   few_shot_paths  = NULL,
+                                   entity_name     = NULL,
+                                   source_passages = NULL,
+                                   prior_draft     = NULL,
+                                   model           = OLLAMA_MODEL,
+                                   base_url        = OLLAMA_BASE_URL) {
   # Ensure temp dir exists for per-iteration checkpoints
   dir.create("temp", showWarnings = FALSE, recursive = FALSE)
 
@@ -168,7 +171,14 @@ draft_with_refinement <- function(source_text, section_id, note_type = "session"
                       few_shot_paths = few_shot_paths,
                       model = model, base_url = base_url)
       } else {
-        NULL  # entity note generation handled by caller
+        generate_entity_note(
+          entity_name     = entity_name,
+          source_passages = source_passages %||% list(source_text),
+          note_type       = note_type,
+          model           = model,
+          base_url        = base_url,
+          prior_draft     = prior_draft
+        )
       }
     } else {
       last_verdict <- iteration_log[[iter - 1L]]

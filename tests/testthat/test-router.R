@@ -213,8 +213,13 @@ test_that(".entity_relative_path stops on unknown note_type", {
 test_that("dispatch_entity_note returns NULL invisibly on skipped verdict", {
   v      <- .make_entity_verdict("skipped", NA)
   result <- withVisible(
-    dispatch_entity_note("draft", v, "Attorrnash", "Attorrnash", "npc",
-                          list("passage"), list("S2e38"))
+    dispatch_entity_note(
+      refinement_result = list(best_draft = "draft", best_confidence = NA,
+                               final_verdict = v, iteration_log = list(),
+                               iteration_count = 1L, claude_used = FALSE),
+      entity_id = "Attorrnash", entity_name = "Attorrnash", note_type = "npc",
+      source_passages = list("passage"), source_episode_ids = list("S2e38")
+    )
   )
   expect_null(result$value)
   expect_false(result$visible)
@@ -230,10 +235,14 @@ test_that("dispatch_entity_note enqueues approved entity at finite confidence (a
   on.exit(rm("enqueue_review", envir = globalenv()), add = TRUE)
 
   v <- .make_entity_verdict("approved", 0.95)  # finite confidence → enqueue with Inf threshold
-  dispatch_entity_note("draft", v, "Attorrnash", "Attorrnash", "npc",
-                        list("passage"), list("S2e38"),
-                        .vault_path = tmp, .dry_run_path = tmp,
-                        .queue_path = tmp)
+  dispatch_entity_note(
+    refinement_result = list(best_draft = "draft", best_confidence = 0.95,
+                             final_verdict = v, iteration_log = list(),
+                             iteration_count = 1L, claude_used = FALSE),
+    entity_id = "Attorrnash", entity_name = "Attorrnash", note_type = "npc",
+    source_passages = list("passage"), source_episode_ids = list("S2e38"),
+    .vault_path = tmp, .dry_run_path = tmp, .queue_path = tmp
+  )
   expect_equal(captured_id, "Attorrnash")
 })
 
@@ -247,10 +256,14 @@ test_that("dispatch_entity_note enqueue calls enqueue_review with entity_id as s
   on.exit(rm("enqueue_review", envir = globalenv()), add = TRUE)
 
   v <- .make_entity_verdict("approved", 0.50)  # below auto-approve threshold → enqueue
-  dispatch_entity_note("draft", v, "Attorrnash", "Attorrnash", "npc",
-                        list("passage"), list("S2e38"),
-                        .vault_path = tmp, .dry_run_path = tmp,
-                        .queue_path = tmp)
+  dispatch_entity_note(
+    refinement_result = list(best_draft = "draft", best_confidence = 0.50,
+                             final_verdict = v, iteration_log = list(),
+                             iteration_count = 1L, claude_used = FALSE),
+    entity_id = "Attorrnash", entity_name = "Attorrnash", note_type = "npc",
+    source_passages = list("passage"), source_episode_ids = list("S2e38"),
+    .vault_path = tmp, .dry_run_path = tmp, .queue_path = tmp
+  )
   expect_equal(captured_id, "Attorrnash")
 })
 
@@ -265,10 +278,14 @@ test_that("dispatch_entity_note enqueues approved note even at Inf confidence (a
 
   # auto_approve branch removed in Phase 0; Inf confidence still routes to enqueue
   v <- .make_entity_verdict("approved", Inf)
-  dispatch_entity_note("draft", v, "Attorrnash", "Attorrnash", "npc",
-                        list("passage"), list("S2e38"),
-                        dry_run = TRUE,
-                        .vault_path = tmp, .dry_run_path = tmp,
-                        .queue_path = tmp)
+  dispatch_entity_note(
+    refinement_result = list(best_draft = "draft", best_confidence = Inf,
+                             final_verdict = v, iteration_log = list(),
+                             iteration_count = 1L, claude_used = FALSE),
+    entity_id = "Attorrnash", entity_name = "Attorrnash", note_type = "npc",
+    source_passages = list("passage"), source_episode_ids = list("S2e38"),
+    dry_run = TRUE,
+    .vault_path = tmp, .dry_run_path = tmp, .queue_path = tmp
+  )
   expect_equal(captured_id, "Attorrnash")
 })

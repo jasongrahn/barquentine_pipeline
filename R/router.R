@@ -80,12 +80,33 @@ dispatch_note <- function(refinement_result, section_id, source_text,
   )
 }
 
-dispatch_entity_note <- function(draft, verdict_list, entity_id, entity_name,
+dispatch_entity_note <- function(refinement_result, entity_id, entity_name,
                                   note_type, source_passages, source_episode_ids,
+                                  # Legacy direct-draft args kept for backward compatibility
+                                  draft         = NULL,
+                                  verdict_list  = NULL,
                                   dry_run       = DRY_RUN,
                                   .vault_path   = VAULT_PATH,
                                   .dry_run_path = DRY_RUN_PATH,
                                   .queue_path   = REVIEW_QUEUE_PATH) {
+  # Accept either a draft_with_refinement() result list or legacy draft+verdict_list
+  if (is.list(refinement_result) && "best_draft" %in% names(refinement_result)) {
+    draft           <- refinement_result$best_draft
+    verdict_list    <- refinement_result$final_verdict
+    iteration_count <- if (is.null(refinement_result$iteration_count))
+                         1L else as.integer(refinement_result$iteration_count)
+    claude_used     <- isTRUE(refinement_result$claude_used)
+    iter_log_json   <- tryCatch(
+      toJSON(refinement_result$iteration_log, auto_unbox = TRUE),
+      error = function(e) "[]"
+    )
+  } else {
+    # Legacy path: plain draft + verdict_list
+    iteration_count <- 1L
+    claude_used     <- FALSE
+    iter_log_json   <- "[]"
+  }
+
   source_text   <- paste(source_passages, collapse = "\n\n---\n\n")
   ep_ids_json   <- toJSON(source_episode_ids, auto_unbox = TRUE)
   relative_path <- .entity_relative_path(entity_id, note_type)
@@ -108,6 +129,9 @@ dispatch_entity_note <- function(draft, verdict_list, entity_id, entity_name,
       source_episode_ids = ep_ids_json,
       existing_note      = existing_note,
       status             = "generation_failed",
+      iteration_count    = iteration_count,
+      claude_used        = claude_used,
+      iteration_log      = iter_log_json,
       .queue_path        = .queue_path
     )
     return(invisible("generation_failed"))
@@ -124,6 +148,9 @@ dispatch_entity_note <- function(draft, verdict_list, entity_id, entity_name,
                    source_episode_ids = ep_ids_json,
                    existing_note = existing_note,
                    status = "critic_rejected",
+                   iteration_count = iteration_count,
+                   claude_used = claude_used,
+                   iteration_log = iter_log_json,
                    .queue_path = .queue_path)
     return(invisible("critic_rejected"))
   }
@@ -134,6 +161,9 @@ dispatch_entity_note <- function(draft, verdict_list, entity_id, entity_name,
                    chunk_count = length(source_passages),
                    source_episode_ids = ep_ids_json,
                    existing_note = existing_note,
+                   iteration_count = iteration_count,
+                   claude_used = claude_used,
+                   iteration_log = iter_log_json,
                    .queue_path = .queue_path)
     return(invisible("escalated_enqueued"))
   }
@@ -143,6 +173,9 @@ dispatch_entity_note <- function(draft, verdict_list, entity_id, entity_name,
                  chunk_count = length(source_passages),
                  source_episode_ids = ep_ids_json,
                  existing_note = existing_note,
+                 iteration_count = iteration_count,
+                 claude_used = claude_used,
+                 iteration_log = iter_log_json,
                  .queue_path = .queue_path)
   invisible("enqueued")
 }
