@@ -21,23 +21,53 @@ route_verdict <- function(verdict, confidence) {
   "enqueue"
 }
 
-dispatch_note <- function(draft, verdict_list, section_id, source_text,
+dispatch_note <- function(refinement_result, section_id, source_text,
+                          # Legacy direct-draft args kept for backward compatibility
+                          # during transition; use refinement_result going forward.
+                          draft        = NULL,
+                          verdict_list = NULL,
                           dry_run = DRY_RUN,
                           .vault_path    = VAULT_PATH,
                           .dry_run_path  = DRY_RUN_PATH,
                           .queue_path    = REVIEW_QUEUE_PATH) {
+  # Accept either a draft_with_refinement() result list or legacy draft+verdict_list
+  if (is.list(refinement_result) && "best_draft" %in% names(refinement_result)) {
+    draft           <- refinement_result$best_draft
+    verdict_list    <- refinement_result$final_verdict
+    iteration_count <- if (is.null(refinement_result$iteration_count))
+                         1L else as.integer(refinement_result$iteration_count)
+    claude_used     <- isTRUE(refinement_result$claude_used)
+    iter_log_json   <- tryCatch(
+      toJSON(refinement_result$iteration_log, auto_unbox = TRUE),
+      error = function(e) "[]"
+    )
+  } else {
+    # Legacy path: plain draft + verdict_list (pre-Phase-0 callers)
+    iteration_count <- 1L
+    claude_used     <- FALSE
+    iter_log_json   <- "[]"
+  }
+
   action <- route_verdict(verdict_list$verdict, verdict_list$confidence)
 
   if (action == "skip") return(invisible(NULL))
 
   if (action == "escalate") {
     enqueue_review(draft, verdict_list, section_id, source_text,
-                   note_type = "session", .queue_path = .queue_path)
+                   note_type = "session",
+                   iteration_count = iteration_count,
+                   claude_used     = claude_used,
+                   iteration_log   = iter_log_json,
+                   .queue_path = .queue_path)
     return(invisible("escalated_enqueued"))
   }
 
   enqueue_review(draft, verdict_list, section_id, source_text,
-                 note_type = "session", .queue_path = .queue_path)
+                 note_type = "session",
+                 iteration_count = iteration_count,
+                 claude_used     = claude_used,
+                 iteration_log   = iter_log_json,
+                 .queue_path = .queue_path)
   invisible("enqueued")
 }
 

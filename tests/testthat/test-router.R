@@ -61,17 +61,32 @@ test_that("route_verdict handles NA confidence gracefully for flagged", {
 test_that("dispatch_note exists and has correct arguments", {
   expect_true(is.function(dispatch_note))
   args <- names(formals(dispatch_note))
-  expect_true("draft"        %in% args)
-  expect_true("verdict_list" %in% args)
-  expect_true("section_id"   %in% args)
-  expect_true("source_text"  %in% args)
-  expect_true("dry_run"      %in% args)
+  expect_true("refinement_result" %in% args)
+  expect_true("section_id"        %in% args)
+  expect_true("source_text"       %in% args)
+  expect_true("dry_run"           %in% args)
 })
 
 # --- dispatch_note() skip path -----------------------------------------------
 
-test_that("dispatch_note returns NULL invisibly for skipped verdict", {
+test_that("dispatch_note returns NULL invisibly for skipped verdict (refinement_result path)", {
   result <- dispatch_note(
+    refinement_result = list(
+      best_draft      = NULL,
+      final_verdict   = list(verdict = "skipped", confidence = NA),
+      iteration_count = 1L,
+      claude_used     = FALSE,
+      iteration_log   = list()
+    ),
+    section_id  = "S2e33",
+    source_text = "some source"
+  )
+  expect_null(result)
+})
+
+test_that("dispatch_note returns NULL invisibly for skipped verdict (legacy path)", {
+  result <- dispatch_note(
+    refinement_result = NULL,
     draft        = NULL,
     verdict_list = list(verdict = "skipped", confidence = NA),
     section_id   = "S2e33",
@@ -89,8 +104,12 @@ test_that("dispatch_note enqueues approved note at finite confidence (auto-appro
   enqueue_review <- function(...) invisible(NULL)
 
   result <- withVisible(dispatch_note(
-    draft        = "# Note content",
-    verdict_list = list(verdict = "approved", confidence = 0.95),
+    refinement_result = list(
+      best_draft      = "# Note content",
+      final_verdict   = list(verdict = "approved", confidence = 0.95,
+                             issues = list(), source_quotes = list()),
+      iteration_count = 1L, claude_used = FALSE, iteration_log = list()
+    ),
     section_id   = "S2e33",
     source_text  = "source",
     dry_run      = TRUE,
@@ -105,16 +124,17 @@ test_that("dispatch_note enqueues approved note at finite confidence (auto-appro
 
 test_that("dispatch_note returns enqueued for flagged verdict above escalate threshold", {
   tmp_queue <- local_tempdir()
-
-  # Stub enqueue_review so we don't need queue.R loaded yet
   enqueue_review <- function(...) invisible(NULL)
 
   result <- withVisible(dispatch_note(
-    draft        = "content",
-    verdict_list = list(verdict  = "flagged",
-                        confidence = CRITIC_ESCALATE_THRESHOLD + 0.1,
-                        issues   = list("minor issue"),
-                        source_quotes = list()),
+    refinement_result = list(
+      best_draft      = "content",
+      final_verdict   = list(verdict = "flagged",
+                             confidence = CRITIC_ESCALATE_THRESHOLD + 0.1,
+                             issues = list("minor issue"),
+                             source_quotes = list()),
+      iteration_count = 1L, claude_used = FALSE, iteration_log = list()
+    ),
     section_id   = "S2e33",
     source_text  = "source",
     dry_run      = TRUE,
@@ -123,6 +143,33 @@ test_that("dispatch_note returns enqueued for flagged verdict above escalate thr
   ))
   expect_false(result$visible)
   expect_equal(result$value, "enqueued")
+})
+
+# --- dispatch_note() Phase 0: writes iteration metadata to queue ---------------
+
+test_that("dispatch_note writes iteration_count and claude_used from refinement_result", {
+  library(jsonlite)
+  source(test_path("../../R/queue.R"))
+
+  tmp_queue <- local_tempdir()
+  dispatch_note(
+    refinement_result = list(
+      best_draft      = "draft",
+      final_verdict   = list(verdict = "approved", confidence = 0.90,
+                             issues = list(), source_quotes = list()),
+      iteration_count = 3L,
+      claude_used     = TRUE,
+      iteration_log   = list(list(iteration = 1L, verdict = "flagged"))
+    ),
+    section_id  = "S2e33",
+    source_text = "source",
+    .queue_path = tmp_queue
+  )
+  row <- readr::read_csv(file.path(tmp_queue, "staging", "S2e33.csv"),
+                         show_col_types = FALSE)
+  expect_equal(row$iteration_count, 3L)
+  expect_true(row$claude_used)
+  expect_true(nzchar(row$iteration_log))
 })
 
 # --- Safety: no destructive operations ---------------------------------------
