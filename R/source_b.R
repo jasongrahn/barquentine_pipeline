@@ -37,7 +37,7 @@ parse_source_b <- function(doc_text) {
     )
     if (length(ep_match) == 0 || identical(ep_match, character(0))) return(NA_character_)
     parts <- regmatches(ep_match, regexec("[Ss](\\d+)\\s*[eE](\\d+)", ep_match, perl = TRUE))[[1]]
-    paste0("S", parts[2], "e", parts[3])
+    sprintf("s%02de%02d", as.integer(parts[2]), as.integer(parts[3]))
   }
 
   SENTINEL <- "<<<EPISODE_BOUNDARY>>>"

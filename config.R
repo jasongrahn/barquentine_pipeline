@@ -18,7 +18,7 @@ VAULT_PATH <- "/Users/jasongrahn/R-projects/barquentine_wiki/BarquentineWiki"
 # Files live directly in /Volumes/share/videos/ with no subdirectory
 NAS_MOUNT     <- "/Volumes/share/videos"
 VTT_EXTENSION <- "\\.vtt$"          # regex pattern for listing VTT files
-VTT_CUTOVER   <- "s2e34"            # first episode with a VTT file (lowercase for matching)
+VTT_CUTOVER   <- "s02e34"           # first episode with a VTT file (zero-padded format)
 
 # -----------------------------------------------------------------------------
 # Google Drive
@@ -82,7 +82,7 @@ TRAINING_DATA_PATH <- "training_data"
 # Pipeline state
 # -----------------------------------------------------------------------------
 # Update CURRENT_SESSION before each run
-CURRENT_SESSION <- "S2e42"           # ← update this each session
+CURRENT_SESSION <- "s02e42"          # ← update this each session (s01e01 zero-padded format)
 
 # Set TRUE to write to /tmp/barquentine-preview/ instead of vault
 # Always do a dry run first when testing new extraction prompts

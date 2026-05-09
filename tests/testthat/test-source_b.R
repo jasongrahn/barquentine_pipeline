@@ -25,8 +25,8 @@ test_that("parse_source_b splits on title paragraph boundaries", {
   result <- parse_source_b(doc)
 
   expect_equal(length(result), 2)
-  expect_true("S2e14" %in% names(result))
-  expect_true("S2e15" %in% names(result))
+  expect_true("s02e14" %in% names(result))
+  expect_true("s02e15" %in% names(result))
 })
 
 test_that("parse_source_b trims whitespace from sections", {
@@ -37,8 +37,8 @@ test_that("parse_source_b trims whitespace from sections", {
   result <- parse_source_b(doc)
 
   # Result should be trimmed plain text, no leading/trailing whitespace
-  expect_false(grepl("^\\s", result[["S2e14"]]))
-  expect_false(grepl("\\s$", result[["S2e14"]]))
+  expect_false(grepl("^\\s", result[["s02e14"]]))
+  expect_false(grepl("\\s$", result[["s02e14"]]))
 })
 
 test_that("parse_source_b returns named list", {
@@ -60,9 +60,9 @@ test_that("parse_source_b handles empty sections gracefully", {
   )
   result <- parse_source_b(doc)
 
-  expect_true("S2e26" %in% names(result))
-  # S2e26 section has no body content, so stripped text is just the heading text
-  expect_true(nchar(trimws(gsub("Barquentine S2e26", "", result[["S2e26"]]))) == 0)
+  expect_true("s02e26" %in% names(result))
+  # s02e26 section has no body content, so stripped text is just the heading text
+  expect_true(nchar(trimws(gsub("Barquentine S2e26", "", result[["s02e26"]]))) == 0)
 })
 
 test_that("parse_source_b handles a single section", {
@@ -73,7 +73,7 @@ test_that("parse_source_b handles a single section", {
   result <- parse_source_b(doc)
 
   expect_equal(length(result), 1)
-  expect_true("S2e14" %in% names(result))
+  expect_true("s02e14" %in% names(result))
 })
 
 # ---- HTML stripping ----
@@ -86,8 +86,8 @@ test_that("parse_source_b strips all HTML tags from output", {
   result <- parse_source_b(doc)
 
   # No < or > should remain in output values
-  expect_false(grepl("<", result[["S2e14"]], fixed = TRUE))
-  expect_false(grepl(">", result[["S2e14"]], fixed = TRUE))
+  expect_false(grepl("<", result[["s02e14"]], fixed = TRUE))
+  expect_false(grepl(">", result[["s02e14"]], fixed = TRUE))
 })
 
 # ---- HTML entity decoding ----
@@ -98,7 +98,7 @@ test_that("parse_source_b decodes HTML entities", {
     '<p>Tom &amp; Jerry, &quot;quoted&quot;, it&#39;s fine &amp; &nbsp; spaced.</p>'
   )
   result <- parse_source_b(doc)
-  text <- result[["S2e14"]]
+  text <- result[["s02e14"]]
 
   expect_true(grepl("&", text, fixed = TRUE))
   expect_true(grepl('"quoted"', text, fixed = TRUE))
@@ -107,50 +107,50 @@ test_that("parse_source_b decodes HTML entities", {
 
 # ---- Episode ID normalisation ----
 
-test_that("parse_source_b normalises S2 e15 (space variant) to S2e15", {
+test_that("parse_source_b normalises S2 e15 (space variant) to s02e15", {
   doc <- paste0(
     make_title_p("Barquentine S2 e15"),
     make_content_p("Space variant.")
   )
   result <- parse_source_b(doc)
 
-  expect_true("S2e15" %in% names(result))
+  expect_true("s02e15" %in% names(result))
 })
 
-test_that("parse_source_b normalises S2E17 (uppercase E) to S2e17", {
+test_that("parse_source_b normalises S2E17 (uppercase E) to s02e17", {
   doc <- paste0(
     make_title_p("Barquentine S2E17"),
     make_content_p("Uppercase E variant.")
   )
   result <- parse_source_b(doc)
 
-  expect_true("S2e17" %in% names(result))
+  expect_true("s02e17" %in% names(result))
 })
 
-test_that("parse_source_b normalises S2 E17 (space + uppercase E) to S2e17", {
+test_that("parse_source_b normalises S2 E17 (space + uppercase E) to s02e17", {
   doc <- paste0(
     make_title_p("Barquentine S2 E17"),
     make_content_p("Space and uppercase E variant.")
   )
   result <- parse_source_b(doc)
 
-  expect_true("S2e17" %in% names(result))
+  expect_true("s02e17" %in% names(result))
 })
 
-test_that("parse_source_b normalises bare s2e26 (lowercase) to S2e26", {
+test_that("parse_source_b normalises bare s2e26 (lowercase) to s02e26", {
   doc <- paste0(
     make_title_p("s2e26"),
     make_content_p("Bare lowercase slug.")
   )
   result <- parse_source_b(doc)
 
-  expect_true("S2e26" %in% names(result))
+  expect_true("s02e26" %in% names(result))
 })
 
 # ---- Deduplication ----
 
 test_that("parse_source_b deduplicates adjacent identical episode IDs", {
-  # Two adjacent sections resolve to the same canonical ID (S2e15 and S2 e15)
+  # Two adjacent sections resolve to the same canonical ID (s02e15 and S2 e15)
   doc <- paste0(
     make_title_p("Barquentine S2e15"),
     make_content_p("First copy."),
@@ -159,13 +159,11 @@ test_that("parse_source_b deduplicates adjacent identical episode IDs", {
   )
   result <- parse_source_b(doc)
 
-  # Only one S2e15 entry should survive
-  expect_equal(sum(names(result) == "S2e15"), 1)
+  # Only one s02e15 entry should survive
+  expect_equal(sum(names(result) == "s02e15"), 1)
   # The first one's content should be kept
-  expect_true(grepl("First copy", result[["S2e15"]]))
+  expect_true(grepl("First copy", result[["s02e15"]]))
 })
-
-# ---- Non-episode titles are excluded ----
 
 # ---- Heading not leaked into content ----
 
@@ -176,8 +174,8 @@ test_that("parse_source_b does not include heading text in section content", {
   )
   result <- parse_source_b(doc)
 
-  expect_false(grepl("Barquentine S2e14", result[["S2e14"]], fixed = TRUE))
-  expect_true(grepl("Hoovale episode", result[["S2e14"]], fixed = TRUE))
+  expect_false(grepl("Barquentine S2e14", result[["s02e14"]], fixed = TRUE))
+  expect_true(grepl("Hoovale episode", result[["s02e14"]], fixed = TRUE))
 })
 
 test_that("parse_source_b sparse section content is only body text, not heading + body", {
@@ -187,8 +185,8 @@ test_that("parse_source_b sparse section content is only body text, not heading 
   )
   result <- parse_source_b(doc)
 
-  expect_false(grepl("Barquentine S2e26", result[["S2e26"]], fixed = TRUE))
-  expect_equal(trimws(result[["S2e26"]]), "Stub content only.")
+  expect_false(grepl("Barquentine S2e26", result[["s02e26"]], fixed = TRUE))
+  expect_equal(trimws(result[["s02e26"]]), "Stub content only.")
 })
 
 # ---- Non-episode titles are excluded ----
@@ -203,7 +201,7 @@ test_that("parse_source_b excludes non-episode title sections (e.g. 'Tab 7')", {
   result <- parse_source_b(doc)
 
   expect_false("Tab 7" %in% names(result))
-  expect_true("S2e32" %in% names(result))
+  expect_true("s02e32" %in% names(result))
 })
 
 # ---- list_folder_docs ----
@@ -212,7 +210,7 @@ test_that("list_folder_docs classifies episode-named doc as single", {
   assign("drive_ls", function(...) data.frame(id = "abc", name = "S2e34 Session Notes", stringsAsFactors = FALSE), envir = globalenv())
   on.exit(rm("drive_ls", envir = globalenv()), add = TRUE)
   result <- list_folder_docs("fake_id")
-  expect_equal(result$episode_id, "S2e34")
+  expect_equal(result$episode_id, "s02e34")
   expect_equal(result$doc_type,   "single")
 })
 
@@ -234,15 +232,15 @@ test_that("list_folder_docs returns empty frame for empty folder", {
 # ---- parse_single_episode_doc ----
 
 test_that("parse_single_episode_doc returns named single-entry list", {
-  result <- parse_single_episode_doc("<p>The party met Fosse.</p>", "S2e35")
+  result <- parse_single_episode_doc("<p>The party met Fosse.</p>", "s02e35")
   expect_length(result, 1L)
-  expect_named(result, "S2e35")
-  expect_true(grepl("Fosse", result[["S2e35"]]))
+  expect_named(result, "s02e35")
+  expect_true(grepl("Fosse", result[["s02e35"]]))
 })
 
 test_that("parse_single_episode_doc strips HTML and decodes entities", {
-  result <- parse_single_episode_doc("<p>A &amp; B &mdash; done.</p>", "S2e36")
-  text   <- result[["S2e36"]]
+  result <- parse_single_episode_doc("<p>A &amp; B &mdash; done.</p>", "s02e36")
+  text   <- result[["s02e36"]]
   expect_false(grepl("<", text, fixed = TRUE))
   expect_true(grepl("&",      text, fixed = TRUE))
   expect_true(grepl("\u2014", text, fixed = TRUE))
@@ -252,7 +250,7 @@ test_that("parse_single_episode_doc strips HTML and decodes entities", {
 
 test_that("fetch_all_episode_docs skips episode already in registry", {
   reg <- withr::local_tempfile(fileext = ".csv")
-  writeLines("episode_id,doc_id,filename,doc_type,fetched_at\nS2e34,abc,foo,single,2025-01-01T00:00:00", reg)
+  writeLines("episode_id,doc_id,filename,doc_type,fetched_at\ns02e34,abc,foo,single,2025-01-01T00:00:00", reg)
   assign("drive_ls",   function(...) data.frame(id = "abc", name = "S2e34 Notes", stringsAsFactors = FALSE), envir = globalenv())
   assign("fetch_gdoc", function(...) stop("should not call fetch_gdoc"),   envir = globalenv())
   on.exit({ rm("drive_ls", envir = globalenv()); rm("fetch_gdoc", envir = globalenv()) }, add = TRUE)
@@ -268,7 +266,7 @@ test_that("fetch_all_episode_docs fetches new single-episode doc and writes regi
   assign("fetch_gdoc", function(...) "<p>Lumi cast Fireball.</p>",          envir = globalenv())
   on.exit({ rm("drive_ls", envir = globalenv()); rm("fetch_gdoc", envir = globalenv()) }, add = TRUE)
   result <- fetch_all_episode_docs("fake_folder", reg, vault_dir)
-  expect_named(result, "S2e39")
+  expect_named(result, "s02e39")
   expect_equal(nrow(read.csv(reg)), 1L)
 })
 
@@ -277,10 +275,11 @@ test_that("fetch_all_episode_docs skips episode whose vault note exists", {
   vault_dir <- withr::local_tempdir()
   writeLines("episode_id,doc_id,filename,doc_type,fetched_at", reg)
   dir.create(file.path(vault_dir, "sessions"))
-  writeLines("# S2e38", file.path(vault_dir, "sessions", "S2e38.md"))
+  writeLines("# s02e38", file.path(vault_dir, "sessions", "s02e38.md"))
   assign("drive_ls",   function(...) data.frame(id = "d2", name = "S2e38 Notes", stringsAsFactors = FALSE), envir = globalenv())
   assign("fetch_gdoc", function(...) stop("should not call fetch_gdoc"),    envir = globalenv())
   on.exit({ rm("drive_ls", envir = globalenv()); rm("fetch_gdoc", envir = globalenv()) }, add = TRUE)
   result <- fetch_all_episode_docs("fake_folder", reg, vault_dir)
   expect_length(result, 0L)
 })
+
