@@ -7,11 +7,10 @@ route_verdict <- function(verdict, confidence) {
     return("critic_reject")
   if (verdict == "rejected")    return("enqueue")
 
-  if (verdict == "approved") {
-    if (!is.na(confidence) && confidence >= CRITIC_AUTO_APPROVE_THRESHOLD)
-      return("auto_approve")
-    return("enqueue")
-  }
+  # auto_approve path disabled for Phase 0 rollout: all drafts go to human review.
+  # CRITIC_AUTO_APPROVE_THRESHOLD is preserved in config for re-enablement after
+  # 5 validated sessions. Do not restore this branch without explicit instruction.
+  if (verdict == "approved")    return("enqueue")
 
   if (verdict == "flagged") {
     if (!is.na(confidence) && confidence < CRITIC_ESCALATE_THRESHOLD)
@@ -30,18 +29,6 @@ dispatch_note <- function(draft, verdict_list, section_id, source_text,
   action <- route_verdict(verdict_list$verdict, verdict_list$confidence)
 
   if (action == "skip") return(invisible(NULL))
-
-  if (action == "auto_approve") {
-    write_note(
-      content       = draft,
-      relative_path = file.path("sessions", paste0(section_id, ".md")),
-      dry_run       = dry_run,
-      overwrite     = TRUE,
-      .vault_path   = .vault_path,
-      .dry_run_path = .dry_run_path
-    )
-    return(invisible("auto_approved"))
-  }
 
   if (action == "escalate") {
     enqueue_review(draft, verdict_list, section_id, source_text,
@@ -109,12 +96,6 @@ dispatch_entity_note <- function(draft, verdict_list, entity_id, entity_name,
                    status = "critic_rejected",
                    .queue_path = .queue_path)
     return(invisible("critic_rejected"))
-  }
-
-  if (action == "auto_approve") {
-    write_note(draft, relative_path, dry_run = dry_run, overwrite = TRUE,
-               .vault_path = .vault_path, .dry_run_path = .dry_run_path)
-    return(invisible("auto_approved"))
   }
 
   if (action == "escalate") {

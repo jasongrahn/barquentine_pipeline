@@ -27,15 +27,12 @@ test_that("route_verdict returns enqueue for rejected", {
   expect_equal(route_verdict("rejected", 0.1), "enqueue")
 })
 
-test_that("route_verdict returns auto_approve for approved above threshold", {
-  expect_equal(route_verdict("approved", CRITIC_AUTO_APPROVE_THRESHOLD),     "auto_approve")
-  expect_equal(route_verdict("approved", CRITIC_AUTO_APPROVE_THRESHOLD + 0.1), "auto_approve")
-})
-
-test_that("route_verdict returns enqueue for approved below threshold", {
-  # CRITIC_AUTO_APPROVE_THRESHOLD is Inf; any finite confidence is below it
-  expect_equal(route_verdict("approved", 0.99), "enqueue")
-  expect_equal(route_verdict("approved", 0.85), "enqueue")
+test_that("route_verdict returns enqueue for all approved verdicts (auto_approve disabled in Phase 0)", {
+  # auto_approve path removed; all approved drafts go to human review queue
+  expect_equal(route_verdict("approved", 0.99),  "enqueue")
+  expect_equal(route_verdict("approved", 0.85),  "enqueue")
+  expect_equal(route_verdict("approved", Inf),   "enqueue")
+  expect_equal(route_verdict("approved", NA),    "enqueue")
 })
 
 test_that("route_verdict returns escalate for flagged below escalate threshold", {
@@ -210,29 +207,21 @@ test_that("dispatch_entity_note enqueue calls enqueue_review with entity_id as s
   expect_equal(captured_id, "Attorrnash")
 })
 
-test_that("dispatch_entity_note supplement path calls supplement_note when note exists (via auto_approve with Inf confidence)", {
+test_that("dispatch_entity_note enqueues approved note even at Inf confidence (auto_approve disabled in Phase 0)", {
   tmp <- withr::local_tempdir()
-  note_path <- file.path(tmp, "npcs", "Attorrnash.md")
-  dir.create(dirname(note_path), recursive = TRUE)
-  writeLines("---\ntags: [npc]\nname: Attorrnash\nreview_required: false\n---\n\n## Session Appearances\n-\n\n## GM Notes\n",
-             note_path)
+  captured_id <- NULL
+  assign("enqueue_review", function(draft, verdict_list, section_id, ...) {
+    captured_id <<- section_id
+    invisible(section_id)
+  }, envir = globalenv())
+  on.exit(rm("enqueue_review", envir = globalenv()), add = TRUE)
 
-  assign("note_exists",     function(...) TRUE,    envir = globalenv())
-  assign("get_output_path", function(...) note_path, envir = globalenv())
-  supplement_called <- FALSE
-  assign("supplement_note", function(...) { supplement_called <<- TRUE; "merged" },
-         envir = globalenv())
-  assign("write_note", function(...) invisible(NULL), envir = globalenv())
-  on.exit(rm("note_exists", "get_output_path", "supplement_note", "write_note",
-             envir = globalenv()), add = TRUE)
-
-  # Inf confidence triggers the auto_approve branch (confidence >= Inf is TRUE),
-  # exercising the supplement_note path even though auto-approve is effectively disabled.
+  # auto_approve branch removed in Phase 0; Inf confidence still routes to enqueue
   v <- .make_entity_verdict("approved", Inf)
   dispatch_entity_note("draft", v, "Attorrnash", "Attorrnash", "npc",
                         list("passage"), list("S2e38"),
                         dry_run = TRUE,
                         .vault_path = tmp, .dry_run_path = tmp,
                         .queue_path = tmp)
-  expect_true(supplement_called)
+  expect_equal(captured_id, "Attorrnash")
 })
