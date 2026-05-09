@@ -54,6 +54,22 @@
 }
 
 run_pipeline <- function(max_retries = 3) {
+  # Auto-detect CURRENT_SESSION when not explicitly set in config.R.
+  # Any non-NULL value in config.R is used as-is (explicit override).
+  if (is.null(CURRENT_SESSION)) {
+    if (!exists("next_unprocessed_session", mode = "function")) {
+      source("R/source_b.R")
+    }
+    detected <- next_unprocessed_session()
+    if (is.null(detected)) {
+      stop("CURRENT_SESSION is NULL and next_unprocessed_session() returned NULL. ",
+           "Set CURRENT_SESSION in config.R or populate the doc registry first.",
+           call. = FALSE)
+    }
+    message(sprintf("CURRENT_SESSION auto-detected: %s", detected))
+    CURRENT_SESSION <<- detected
+  }
+
   .assert_session_ordering()
 
   for (i in seq_len(max_retries)) {

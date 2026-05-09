@@ -283,3 +283,60 @@ test_that("fetch_all_episode_docs skips episode whose vault note exists", {
   expect_length(result, 0L)
 })
 
+# ---- next_unprocessed_session ----
+
+test_that("next_unprocessed_session returns NULL when registry missing", {
+  vault_dir <- withr::local_tempdir()
+  result <- next_unprocessed_session(vault_dir, tempfile())
+  expect_null(result)
+})
+
+test_that("next_unprocessed_session returns first session not in vault", {
+  vault_dir <- withr::local_tempdir()
+  reg       <- withr::local_tempfile(fileext = ".csv")
+  dir.create(file.path(vault_dir, "sessions"))
+  writeLines("# done", file.path(vault_dir, "sessions", "s02e34.md"))
+  writeLines(
+    "episode_id,doc_id,filename,doc_type,fetched_at\ns02e34,a,f,single,2025-01-01T00:00:00\ns02e35,b,g,single,2025-01-01T00:00:00",
+    reg
+  )
+  result <- next_unprocessed_session(vault_dir, reg)
+  expect_equal(result, "s02e35")
+})
+
+test_that("next_unprocessed_session returns NULL when all registry sessions are in vault", {
+  vault_dir <- withr::local_tempdir()
+  reg       <- withr::local_tempfile(fileext = ".csv")
+  dir.create(file.path(vault_dir, "sessions"))
+  writeLines("# done", file.path(vault_dir, "sessions", "s02e34.md"))
+  writeLines(
+    "episode_id,doc_id,filename,doc_type,fetched_at\ns02e34,a,f,single,2025-01-01T00:00:00",
+    reg
+  )
+  result <- next_unprocessed_session(vault_dir, reg)
+  expect_null(result)
+})
+
+test_that("next_unprocessed_session ignores rows with malformed episode_id", {
+  vault_dir <- withr::local_tempdir()
+  reg       <- withr::local_tempfile(fileext = ".csv")
+  writeLines(
+    "episode_id,doc_id,filename,doc_type,fetched_at\nS2e34,a,f,single,2025-01-01T00:00:00\ns02e35,b,g,single,2025-01-01T00:00:00",
+    reg
+  )
+  # S2e34 (old-format) is filtered out; only s02e35 is considered
+  result <- next_unprocessed_session(vault_dir, reg)
+  expect_equal(result, "s02e35")
+})
+
+test_that("next_unprocessed_session returns lexicographically-smallest unprocessed session", {
+  vault_dir <- withr::local_tempdir()
+  reg       <- withr::local_tempfile(fileext = ".csv")
+  writeLines(
+    "episode_id,doc_id,filename,doc_type,fetched_at\ns02e36,c,h,single,2025-01-01T00:00:00\ns02e34,a,f,single,2025-01-01T00:00:00\ns02e35,b,g,single,2025-01-01T00:00:00",
+    reg
+  )
+  # Even though s02e36 appears first in the file, s02e34 sorts lowest
+  result <- next_unprocessed_session(vault_dir, reg)
+  expect_equal(result, "s02e34")
+})

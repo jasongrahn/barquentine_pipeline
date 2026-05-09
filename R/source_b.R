@@ -73,6 +73,40 @@ parse_single_episode_doc <- function(html, episode_id) {
   stats::setNames(list(.clean_html_to_text(html)), episode_id)
 }
 
+# Returns the first session ID present in the doc registry but not yet in the
+# vault. Sessions are sorted lexicographically (zero-padded s01e01 format
+# sorts correctly). Returns NULL when the registry is missing/empty or all
+# registry sessions are already in the vault.
+#
+# This is the explicit auto-detection helper for the outer loop. CURRENT_SESSION
+# in config.R remains as a manual override; pipeline runner falls back to this
+# helper when CURRENT_SESSION is set to NULL.
+next_unprocessed_session <- function(vault_path    = VAULT_PATH,
+                                      registry_path = DOC_REGISTRY_PATH) {
+  if (!file.exists(registry_path)) return(NULL)
+
+  reg <- tryCatch(
+    read.csv(registry_path, stringsAsFactors = FALSE),
+    error = function(e) NULL
+  )
+  if (is.null(reg) || !"episode_id" %in% names(reg)) return(NULL)
+
+  available <- reg$episode_id[!is.na(reg$episode_id) & nzchar(reg$episode_id)]
+  available <- available[grepl("^s\\d{2}e\\d{2}$", available)]
+  if (length(available) == 0L) return(NULL)
+
+  sessions_dir <- file.path(vault_path, "sessions")
+  vault_sessions <- if (dir.exists(sessions_dir))
+    tools::file_path_sans_ext(list.files(sessions_dir, pattern = "\\.md$"))
+  else character(0)
+
+  sorted <- sort(unique(available))
+  for (sid in sorted) {
+    if (!sid %in% vault_sessions) return(sid)
+  }
+  NULL
+}
+
 fetch_all_episode_docs <- function(folder_id,
                                    registry_path = DOC_REGISTRY_PATH,
                                    vault_path    = VAULT_PATH) {

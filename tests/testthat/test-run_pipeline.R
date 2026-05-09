@@ -89,3 +89,23 @@ test_that(".assert_session_ordering passes when current_session is NULL", {
   vault <- local_tempdir()
   expect_true(.assert_session_ordering(NULL, vault))
 })
+
+# ---- run_pipeline auto-detect (Step 2.6 wiring) ----------------------------
+
+test_that("run_pipeline errors clearly when CURRENT_SESSION is NULL and registry empty", {
+  source(test_path("../../R/source_b.R"))
+  # Stub tar_make so it does not actually try to run the targets pipeline
+  assign("tar_make", function(...) invisible(NULL), envir = globalenv())
+  on.exit(rm("tar_make", envir = globalenv()), add = TRUE)
+
+  prev <- CURRENT_SESSION
+  CURRENT_SESSION <<- NULL
+  on.exit(CURRENT_SESSION <<- prev, add = TRUE)
+
+  # Point at a non-existent registry
+  prev_reg <- DOC_REGISTRY_PATH
+  DOC_REGISTRY_PATH <<- tempfile()
+  on.exit(DOC_REGISTRY_PATH <<- prev_reg, add = TRUE)
+
+  expect_error(run_pipeline(), regexp = "auto-detected.*NULL|next_unprocessed_session")
+})
