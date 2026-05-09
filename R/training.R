@@ -39,16 +39,20 @@ write_dpo <- function(section_id, prompt, chosen, rejected,
 }
 
 # Writes one negative example (a draft the reviewer rejected outright).
-write_negative <- function(section_id, prompt, draft,
+write_negative <- function(section_id, prompt, draft, reject_reason = NULL,
                            .path = TRAINING_DATA_PATH) {
   dir_create(.path, recurse = TRUE)
-  record <- toJSON(list(
+  record_list <- list(
     type       = "negative",
     section_id = section_id,
     prompt     = prompt,
     draft      = draft,
     created_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%S")
-  ), auto_unbox = TRUE)
+  )
+  if (!is.null(reject_reason) && nzchar(trimws(reject_reason))) {
+    record_list$reject_reason <- trimws(reject_reason)
+  }
+  record <- toJSON(record_list, auto_unbox = TRUE)
   cat(record, "\n", sep = "",
       file = file.path(.path, "negatives.jsonl"), append = TRUE)
   invisible(section_id)
@@ -84,7 +88,9 @@ generate_training_data <- function(.queue_path    = REVIEW_QUEUE_PATH,
       write_dpo(sid, prompt, chosen = chosen, rejected = draft,
                 .path = .training_path)
     } else {
-      write_negative(sid, prompt, draft, .path = .training_path)
+      reason <- if ("reject_reason" %in% names(row) && !is.na(row$reject_reason))
+        row$reject_reason else NULL
+      write_negative(sid, prompt, draft, reject_reason = reason, .path = .training_path)
     }
 
     df$training_exported[df$section_id == sid] <- TRUE

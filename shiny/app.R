@@ -209,6 +209,7 @@ server <- function(input, output, session) {
         actionButton("reject_btn",      "Reject",            class = "btn-danger  btn-sm"),
         actionButton("regen_btn",       "Queue for Regen",   class = "btn-secondary btn-sm")
       ),
+      uiOutput("reject_panel"),
       textAreaInput("regen_feedback", label = "Feedback for regen (optional):",
                     value = "", width = "100%", height = "70px",
                     placeholder = "e.g. 'Focus on the faction\u2019s trade goals, not conquest.'"),
@@ -223,7 +224,10 @@ server <- function(input, output, session) {
     df[idx, ]
   })
 
+  reject_pending <- reactiveVal(FALSE)
+
   .advance <- function() {
+    reject_pending(FALSE)
     queue_rv(read_queue(.queue_path = QUEUE_PATH_ABS, status = "pending"))
     new_n <- nrow(queue_rv())
     if (new_n == 0) {
@@ -234,6 +238,19 @@ server <- function(input, output, session) {
   }
 
   output$action_msg <- renderUI(NULL)
+
+  # --- Reject panel ------------------------------------------------------------
+
+  output$reject_panel <- renderUI({
+    if (!reject_pending()) return(NULL)
+    tags$div(
+      style = "margin-top: 6px;",
+      textAreaInput("reject_reason", label = "Rejection reason (optional):",
+                    value = "", width = "100%", height = "70px",
+                    placeholder = "e.g. 'Fabricated NPC name not in source text.'"),
+      actionButton("confirm_reject_btn", "Confirm Reject", class = "btn-danger btn-sm")
+    )
+  })
 
   # --- Regen sidebar -----------------------------------------------------------
 
@@ -318,8 +335,18 @@ server <- function(input, output, session) {
   })
 
   observeEvent(input$reject_btn, {
-    row <- .current_row()
-    resolve_item(row$section_id, "rejected", .queue_path = QUEUE_PATH_ABS)
+    reject_pending(TRUE)
+    output$action_msg <- renderUI(
+      tags$p(style = "color: #dc3545;", "Add a reason (optional) and click Confirm Reject.")
+    )
+  })
+
+  observeEvent(input$confirm_reject_btn, {
+    row   <- .current_row()
+    reason <- trimws(input$reject_reason)
+    resolve_item(row$section_id, "rejected",
+                 reject_reason = if (nzchar(reason)) reason else NULL,
+                 .queue_path = QUEUE_PATH_ABS)
     note_path <- file.path("sessions", row$section_id)
     append_review_entry(
       format_review_entry(note_path, "rejected by reviewer", verdict = "rejected"),
@@ -329,6 +356,7 @@ server <- function(input, output, session) {
     output$action_msg <- renderUI(
       tags$p(style = "color: #dc3545;", paste("Rejected:", row$section_id))
     )
+    reject_pending(FALSE)
     .advance()
   })
 

@@ -22,7 +22,8 @@ library(fs)
     dismissed_findings = NA_character_,
     slug_override      = NA_character_,
     user_feedback      = NA_character_,
-    regen_count        = 0L
+    regen_count        = 0L,
+    reject_reason      = NA_character_
   )
   for (col in names(defaults)) {
     if (!col %in% names(df)) df[[col]] <- defaults[[col]]
@@ -136,6 +137,7 @@ read_queue <- function(.queue_path = REVIEW_QUEUE_PATH, status = "pending") {
 
 resolve_item <- function(section_id, resolution, edited_draft = NULL,
                          status_detail = NULL, merged_into = NULL,
+                         reject_reason = NULL,
                          .queue_path = REVIEW_QUEUE_PATH) {
   VALID_RESOLUTIONS <- c(
     "accepted", "accepted_with_edit", "rejected",
@@ -155,9 +157,10 @@ resolve_item <- function(section_id, resolution, edited_draft = NULL,
   df$status[idx]          <- resolution
   df$resolved_at[idx]     <- now
   df$last_action_at[idx]  <- now
-  if (!is.null(edited_draft)) df$final_draft[idx]    <- edited_draft
-  if (!is.null(status_detail)) df$status_detail[idx] <- status_detail
-  if (!is.null(merged_into))  df$merged_into[idx]    <- merged_into
+  if (!is.null(edited_draft))  df$final_draft[idx]    <- edited_draft
+  if (!is.null(status_detail)) df$status_detail[idx]  <- status_detail
+  if (!is.null(merged_into))   df$merged_into[idx]    <- merged_into
+  if (!is.null(reject_reason)) df$reject_reason[idx]  <- reject_reason
 
   write_csv(df, csv_path)
   invisible(resolution)
