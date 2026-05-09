@@ -297,36 +297,36 @@ New: single target per section calling `draft_with_refinement()`
 
 ### Step 2.1 — `source_b.R` + `config.R`: Zero-padded session ID format
 
-- [ ] Update section ID generation in `source_b.R` to emit `s01e01`-style IDs
-- [ ] Update `CURRENT_SESSION` default in `config.R`
-- [ ] Apply at vault wipe — no migration of existing files needed
-- [ ] Update any string comparisons / sort logic that assumes old format
+- [x] Update section ID generation in `source_b.R` to emit `s01e01`-style IDs
+- [x] Update `CURRENT_SESSION` default in `config.R`
+- [x] Apply at vault wipe — no migration of existing files needed
+- [x] Update any string comparisons / sort logic that assumes old format
 
 **Note:** The ordered session list is available from the Google Doc tab list. Pull it
 programmatically from `source_b.R` to confirm order before wipe.
 
 ### Step 2.2 — `writer.R`: Add `write_placeholder_note(session_id)`
 
-- [ ] Writes a gap-session placeholder with `gap: true` frontmatter
-- [ ] Called when a session has no source notes
-- [ ] Placeholder content: `"No session notes available for {session_id}."`
+- [x] Writes a gap-session placeholder with `gap: true` frontmatter
+- [x] Called when a session has no source notes
+- [x] Placeholder content: `"No session notes available for {session_id}."`
 
 ### Step 2.3 — `story.R`: New file — Story So Far
 
 New file `R/story.R`.
 
-- [ ] `read_story_so_far(current_session)`: finds the highest-numbered snapshot with
+- [x] `read_story_so_far(current_session)`: finds the highest-numbered snapshot with
   session ID less than `current_session`; returns file content or `NULL` if none exists
-- [ ] `update_story_so_far(through_session)`: Claude call (Batch API — non-blocking,
+- [x] `update_story_so_far(through_session)`: Claude call (Batch API — non-blocking,
   runs after full session approval) with prompt:
   > "Update this campaign summary to incorporate the events of the new session.
   > Preserve all prior context, compress where appropriate, highlight new developments,
   > active threads, and unresolved plot points."
-- [ ] Prompt must include a **Key Entities** section summarizing current PC status at
+- [x] Prompt must include a **Key Entities** section summarizing current PC status at
   minimum: Basil / The Captain, Room, Lumi. This is narrative state (wounds, goals,
   relationships), not a duplicate of vault entity files.
-- [ ] Writes versioned snapshot: `vault/story_so_far/through_{session_id}.md`
-- [ ] Frontmatter schema:
+- [x] Writes versioned snapshot: `vault/story_so_far/through_{session_id}.md`
+- [x] Frontmatter schema:
   ```yaml
   ---
   type: campaign_summary
@@ -336,37 +336,41 @@ New file `R/story.R`.
   gaps: [s01e07]
   ---
   ```
-- [ ] Story So Far generator is instructed to skip `gap: true` entries rather than
+- [x] Story So Far generator is instructed to skip `gap: true` entries rather than
   fabricate content
 
 ### Step 2.4 — `extract.R`: Update `generate_note()` for outer loop context
 
-- [ ] Accept optional `story_so_far` parameter
-- [ ] When provided, prepend Story So Far to generator context (before source text)
+- [x] Accept optional `story_so_far` parameter
+- [x] When provided, prepend Story So Far to generator context (before source text)
 - [ ] Add targeted entity note injection: pull only vault entity files for entities
   directly mentioned in the current source text (not full vault dump)
-- [ ] `read_story_so_far()` is called by the pipeline runner, not inside
+  *(Deferred: not blocking; revisit when entity vault grows enough to matter.)*
+- [x] `read_story_so_far()` is called by the pipeline runner, not inside
   `generate_note()` — context is passed in, not fetched internally
 
 **Dependencies:** Step 2.3
 
 ### Step 2.5 — `run_pipeline.R` + `_targets.R`: Session ordering guard
 
-- [ ] `run_pipeline()` checks vault for session note or placeholder for the previous
+- [x] `run_pipeline()` checks vault for session note or placeholder for the previous
   session before proceeding
-- [ ] Hard stop with informative message if previous session is missing
-- [ ] Respect `PROCESS_ONE_SESSION = TRUE` from config
-- [ ] Document that vault can be wiped and rebuilt from scratch — this is expected
+- [x] Hard stop with informative message if previous session is missing
+- [x] Respect `PROCESS_ONE_SESSION = TRUE` from config
+- [x] Document that vault can be wiped and rebuilt from scratch — this is expected
   for the initial run under the new system
 
 **Dependencies:** Step 2.2 (placeholder mechanism must exist)
 
 ### Step 2.6 — `source_b.R` / `config.R`: `next_unprocessed_session()` auto-detection
 
-- [ ] Helper reads the source doc's tab list and returns the first session not yet
+- [x] Helper reads the source doc's tab list and returns the first session not yet
   present in the vault
-- [ ] `CURRENT_SESSION` in `config.R` remains as explicit override
-- [ ] `run_pipeline()` uses `next_unprocessed_session()` when `CURRENT_SESSION` is
+  *(Implementation note: reads from `DOC_REGISTRY_PATH` rather than re-fetching
+  the multi-tab Drive doc. The registry is populated by `fetch_all_episode_docs()`
+  on the prior run, so it is the authoritative local list of available sessions.)*
+- [x] `CURRENT_SESSION` in `config.R` remains as explicit override
+- [x] `run_pipeline()` uses `next_unprocessed_session()` when `CURRENT_SESSION` is
   not explicitly set (or is set to a sentinel like `NULL`)
 
 **Dependencies:** Step 2.1 (session ID format must be settled)
