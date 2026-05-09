@@ -105,6 +105,43 @@ generate_note <- function(episode_id, section_text,
          "\n--- END EXAMPLES ---\n\n")
 }
 
+revise_note <- function(draft, issues, quotes, source_text,
+                        model    = OLLAMA_MODEL,
+                        base_url = OLLAMA_BASE_URL) {
+  issues_block <- if (length(issues) > 0)
+    paste0("ISSUES TO CORRECT:\n", paste0("- ", unlist(issues), collapse = "\n"))
+  else
+    "ISSUES TO CORRECT:\n(none specified)"
+
+  quotes_block <- if (length(quotes) > 0)
+    paste0("SOURCE QUOTES GROUNDING THESE ISSUES:\n",
+           paste0("> ", unlist(quotes), collapse = "\n"))
+  else
+    "SOURCE QUOTES GROUNDING THESE ISSUES:\n(none provided)"
+
+  prompt <- paste0(
+    "SOURCE TEXT:\n", source_text,
+    "\n\n", quotes_block,
+    "\n\n", issues_block,
+    "\n\nDRAFT TO REVISE:\n", draft,
+    "\n\nRevise the draft above. ",
+    "Correct the specific issues listed below. ",
+    "You may rephrase immediately surrounding sentences for readability, ",
+    "but do not add new facts, remove sections, ",
+    "or change anything not adjacent to a listed issue. ",
+    "Output only the revised markdown note with no explanation or preamble."
+  )
+
+  result <- ollama_generate(prompt, GENERATOR_SYSTEM_PROMPT,
+                             model    = model,
+                             base_url = base_url,
+                             think    = FALSE)
+
+  # Propagate timeout sentinel so draft_with_refinement() can detect it
+  if (is.list(result) && isTRUE(result$timed_out)) return(result)
+  result
+}
+
 .regen_context_block <- function(prior_draft, critic_findings, user_feedback) {
   parts <- character(0)
   if (!is.null(prior_draft) && nzchar(trimws(prior_draft)))

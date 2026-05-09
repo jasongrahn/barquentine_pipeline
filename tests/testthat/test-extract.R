@@ -367,3 +367,85 @@ test_that("generate_entity_note strips preamble before first --- when model adds
                                  model = "m", base_url = "http://localhost:11434")
   expect_true(startsWith(result, "---"))
 })
+
+# --- revise_note() -----------------------------------------------------------
+
+test_that("revise_note exists and has correct signature", {
+  expect_true(is.function(revise_note))
+  args <- names(formals(revise_note))
+  expect_true("draft"       %in% args)
+  expect_true("issues"      %in% args)
+  expect_true("quotes"      %in% args)
+  expect_true("source_text" %in% args)
+  expect_true("model"       %in% args)
+  expect_true("base_url"    %in% args)
+})
+
+test_that("revise_note prompt includes both issues and source quotes", {
+  captured_prompt <- NULL
+  assign("ollama_generate", function(prompt, ...) {
+    captured_prompt <<- prompt
+    "revised draft text"
+  }, envir = globalenv())
+  on.exit(rm("ollama_generate", envir = globalenv()), add = TRUE)
+
+  revise_note(
+    draft       = "original draft",
+    issues      = list("Wrong NPC name used"),
+    quotes      = list("Source says Attorrnash, not Mordecai"),
+    source_text = "source text here",
+    model       = "m", base_url = "http://localhost:11434"
+  )
+  expect_true(grepl("Wrong NPC name used",                captured_prompt, fixed = TRUE))
+  expect_true(grepl("Source says Attorrnash, not Mordecai", captured_prompt, fixed = TRUE))
+})
+
+test_that("revise_note prompt includes source_text and original draft", {
+  captured_prompt <- NULL
+  assign("ollama_generate", function(prompt, ...) {
+    captured_prompt <<- prompt
+    "revised"
+  }, envir = globalenv())
+  on.exit(rm("ollama_generate", envir = globalenv()), add = TRUE)
+
+  revise_note("my draft", list("issue"), list("quote"), "my source",
+              model = "m", base_url = "http://localhost:11434")
+  expect_true(grepl("my draft",  captured_prompt, fixed = TRUE))
+  expect_true(grepl("my source", captured_prompt, fixed = TRUE))
+})
+
+test_that("revise_note calls ollama_generate with think=FALSE", {
+  captured_args <- NULL
+  assign("ollama_generate", function(prompt, system_prompt, ...) {
+    captured_args <<- list(...)
+    "revised"
+  }, envir = globalenv())
+  on.exit(rm("ollama_generate", envir = globalenv()), add = TRUE)
+
+  revise_note("draft", list(), list(), "source",
+              model = "m", base_url = "http://localhost:11434")
+  expect_false(captured_args$think)
+})
+
+test_that("revise_note calls ollama_generate without a format schema (free text)", {
+  captured_args <- NULL
+  assign("ollama_generate", function(prompt, system_prompt, ...) {
+    captured_args <<- list(...)
+    "revised"
+  }, envir = globalenv())
+  on.exit(rm("ollama_generate", envir = globalenv()), add = TRUE)
+
+  revise_note("draft", list(), list(), "source",
+              model = "m", base_url = "http://localhost:11434")
+  expect_null(captured_args$format)
+})
+
+test_that("revise_note propagates timed_out sentinel from ollama_generate", {
+  assign("ollama_generate", function(...) list(timed_out = TRUE, verdict = NULL),
+         envir = globalenv())
+  on.exit(rm("ollama_generate", envir = globalenv()), add = TRUE)
+
+  result <- revise_note("draft", list("issue"), list("quote"), "source",
+                        model = "m", base_url = "http://localhost:11434")
+  expect_identical(result, list(timed_out = TRUE, verdict = NULL))
+})
