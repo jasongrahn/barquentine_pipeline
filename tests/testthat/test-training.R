@@ -341,3 +341,98 @@ test_that("generate_training_data tolerates missing or empty iteration_log", {
   )
   expect_false(file.exists(file.path(tmp_t, "dpo.jsonl")))
 })
+
+# --- Step 3.2: Claude escalation source tagging -----------------------------
+
+test_that("write_dpo accepts and writes a source field when supplied", {
+  tmp <- local_tempdir()
+  write_dpo("S2e10", "p", "ch", "rej", source = "claude_escalation", .path = tmp)
+  rec <- read_jsonl(file.path(tmp, "dpo.jsonl"))[[1]]
+  expect_equal(rec$source, "claude_escalation")
+})
+
+test_that("write_dpo omits source field when source = NULL (backward compat)", {
+  tmp <- local_tempdir()
+  write_dpo("S2e10", "p", "ch", "rej", .path = tmp)
+  rec <- read_jsonl(file.path(tmp, "dpo.jsonl"))[[1]]
+  expect_null(rec$source)
+})
+
+test_that("intermediate revision DPO pair is tagged source='intermediate'", {
+  tmp <- local_tempdir()
+  log <- list(
+    list(draft = "v1", confidence = 0.55),
+    list(draft = "v2", confidence = 0.85)
+  )
+  write_intermediate_pairs_from_log("S2e10", "p", log, .path = tmp)
+  rec <- read_jsonl(file.path(tmp, "dpo.jsonl"))[[1]]
+  expect_equal(rec$source, "intermediate")
+})
+
+test_that("cap_hit Claude revision emits DPO with source='claude_escalation'", {
+  tmp <- local_tempdir()
+  log <- list(
+    list(draft = "ollama_v1", confidence = 0.50, model = "qwen3.5:9b"),
+    list(draft = "claude_revision", confidence = 0.90,
+         model = "claude (cap_hit escalation)",
+         escalation_reason = "cap_hit")
+  )
+  n <- write_intermediate_pairs_from_log("S2e10", "p", log, .path = tmp)
+  expect_equal(n, 1L)
+  rec <- read_jsonl(file.path(tmp, "dpo.jsonl"))[[1]]
+  expect_equal(rec$source,   "claude_escalation")
+  expect_equal(rec$rejected, "ollama_v1")
+  expect_equal(rec$chosen,   "claude_revision")
+})
+
+test_that("cap_hit pair picks highest-confidence Ollama draft as rejected", {
+  tmp <- local_tempdir()
+  log <- list(
+    list(draft = "ollama_v1", confidence = 0.55),
+    list(draft = "ollama_v2", confidence = 0.78),  # best Ollama
+    list(draft = "ollama_v3", confidence = 0.40),
+    list(draft = "claude_revision", confidence = 0.90,
+         escalation_reason = "cap_hit")
+  )
+  write_intermediate_pairs_from_log("S2e10", "p", log, .path = tmp)
+  recs <- read_jsonl(file.path(tmp, "dpo.jsonl"))
+  esc <- Filter(function(r) identical(r$source, "claude_escalation"), recs)
+  expect_length(esc, 1L)
+  expect_equal(esc[[1]]$rejected, "ollama_v2")
+  expect_equal(esc[[1]]$chosen,   "claude_revision")
+})
+
+test_that("cap_hit Claude with same draft as best Ollama emits no claude_escalation pair", {
+  tmp <- local_tempdir()
+  log <- list(
+    list(draft = "ollama_only", confidence = 0.60),
+    list(draft = "ollama_only", confidence = 0.85,    # Claude reviewed only
+         escalation_reason = "cap_hit")
+  )
+  n <- write_intermediate_pairs_from_log("S2e10", "p", log, .path = tmp)
+  expect_equal(n, 0L)
+  expect_false(file.exists(file.path(tmp, "dpo.jsonl")))
+})
+
+test_that("cap_hit Claude with NA draft emits no claude_escalation pair", {
+  tmp <- local_tempdir()
+  log <- list(
+    list(draft = "ollama_v1", confidence = 0.60),
+    list(draft = NA_character_, confidence = 0.85,
+         escalation_reason = "cap_hit")
+  )
+  n <- write_intermediate_pairs_from_log("S2e10", "p", log, .path = tmp)
+  expect_equal(n, 0L)
+})
+
+test_that("accepted_with_edit DPO is tagged source='human_edit'", {
+  tmp_q <- local_tempdir()
+  tmp_t <- local_tempdir()
+  enqueue_review("original", make_verdict_list(), "S2e10", "src", .queue_path = tmp_q)
+  consolidate_queue(.queue_path = tmp_q)
+  resolve_item("S2e10", "accepted_with_edit", edited_draft = "edited",
+               .queue_path = tmp_q)
+  generate_training_data(.queue_path = tmp_q, .training_path = tmp_t)
+  rec <- read_jsonl(file.path(tmp_t, "dpo.jsonl"))[[1]]
+  expect_equal(rec$source, "human_edit")
+})

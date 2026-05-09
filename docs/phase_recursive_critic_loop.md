@@ -391,9 +391,9 @@ New file `R/story.R`.
 
 ### Step 3.2 — `training.R`: Claude escalation DPO pairs with `source` field
 
-- [ ] When Claude produces a revision after cap: `rejected` = best Ollama draft,
+- [x] When Claude produces a revision after cap: `rejected` = best Ollama draft,
   `chosen` = Claude revision
-- [ ] Write to `dpo.jsonl` with `source: "claude_escalation"` field for separate
+- [x] Write to `dpo.jsonl` with `source: "claude_escalation"` field for separate
   weighting during fine-tuning
 
 ### Step 3.3 — `story.R` or standalone: `refresh_few_shots()`

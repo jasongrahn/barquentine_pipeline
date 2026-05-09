@@ -20,19 +20,28 @@ write_sft <- function(section_id, prompt, completion,
 }
 
 # Writes one DPO (direct preference optimisation) pair.
-# chosen  = the human-edited (accepted) draft
-# rejected = the original model-generated draft
+# chosen  = the preferred draft (human edit, post-revision Ollama, or Claude revision)
+# rejected = the dispreferred draft (original or pre-revision)
+# source  = optional provenance tag, e.g., "human_edit", "intermediate",
+#           "claude_escalation"; written into the JSON when supplied so
+#           downstream fine-tuning can weight or filter pair sources separately.
 write_dpo <- function(section_id, prompt, chosen, rejected,
+                      source = NULL,
                       .path = TRAINING_DATA_PATH) {
   dir_create(.path, recurse = TRUE)
-  record <- toJSON(list(
+  record_list <- list(
     type       = "dpo",
     section_id = section_id,
     prompt     = prompt,
     chosen     = chosen,
     rejected   = rejected,
     created_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%S")
-  ), auto_unbox = TRUE)
+  )
+  if (!is.null(source) && length(source) == 1L && !is.na(source) &&
+      nzchar(trimws(source))) {
+    record_list$source <- trimws(source)
+  }
+  record <- toJSON(record_list, auto_unbox = TRUE)
   cat(record, "\n", sep = "",
       file = file.path(.path, "dpo.jsonl"), append = TRUE)
   invisible(section_id)
@@ -58,41 +67,85 @@ write_negative <- function(section_id, prompt, draft, reject_reason = NULL,
   invisible(section_id)
 }
 
+.entry_has_usable_draft <- function(e) {
+  d <- e$draft
+  !is.null(d) && length(d) == 1L && !is.na(d) &&
+    is.character(d) && nzchar(d)
+}
+
+.entry_has_confidence <- function(e) {
+  c <- e$confidence
+  !is.null(c) && length(c) == 1L && !is.na(c)
+}
+
+.is_cap_hit_entry <- function(e) {
+  r <- e$escalation_reason
+  !is.null(r) && length(r) == 1L && !is.na(r) &&
+    identical(as.character(r), "cap_hit")
+}
+
 # Walks an iteration_log (list of per-iteration records) and writes intermediate
-# DPO pairs (when a revision improved confidence) or negative examples (when it
-# stayed flat or dropped). Returns the count of training records written.
+# DPO pairs (when a revision improved confidence), negative examples (when a
+# revision stayed flat or dropped), and a Claude-escalation DPO pair when a
+# cap-hit Claude revision produced a different draft from the best Ollama draft.
+# Returns the count of training records written.
 write_intermediate_pairs_from_log <- function(section_id, prompt, iteration_log,
                                                .path = TRAINING_DATA_PATH) {
   if (!is.list(iteration_log) || length(iteration_log) < 2L) return(invisible(0L))
 
+  cap_indices <- which(vapply(iteration_log, .is_cap_hit_entry, logical(1)))
+  cap_idx     <- if (length(cap_indices) > 0L) cap_indices[length(cap_indices)] else 0L
+
   count <- 0L
-  for (i in seq_len(length(iteration_log) - 1L)) {
-    prev <- iteration_log[[i]]
-    nxt  <- iteration_log[[i + 1L]]
 
-    prev_draft <- prev$draft
-    nxt_draft  <- nxt$draft
-    prev_conf  <- prev$confidence
-    nxt_conf   <- nxt$confidence
+  # Phase 3.1 — pairwise walk over pre-cap (Ollama) iterations.
+  ollama_upper <- if (cap_idx > 0L) cap_idx - 1L else length(iteration_log)
+  if (ollama_upper >= 2L) {
+    for (i in seq_len(ollama_upper - 1L)) {
+      prev <- iteration_log[[i]]
+      nxt  <- iteration_log[[i + 1L]]
 
-    if (is.null(prev_draft) || is.null(nxt_draft)) next
-    if (length(prev_draft) == 0L || length(nxt_draft) == 0L) next
-    if (is.na(prev_draft) || is.na(nxt_draft))               next
-    if (!nzchar(prev_draft) || !nzchar(nxt_draft))           next
-    if (identical(prev_draft, nxt_draft))                    next
-    if (is.null(prev_conf) || is.null(nxt_conf))             next
-    if (is.na(prev_conf)  || is.na(nxt_conf))                next
+      if (!.entry_has_usable_draft(prev) || !.entry_has_usable_draft(nxt)) next
+      if (identical(prev$draft, nxt$draft)) next
+      if (!.entry_has_confidence(prev) || !.entry_has_confidence(nxt)) next
 
-    if (nxt_conf > prev_conf) {
-      write_dpo(section_id, prompt, chosen = nxt_draft, rejected = prev_draft,
-                .path = .path)
-    } else {
-      write_negative(section_id, prompt, draft = nxt_draft,
-                     reject_reason = "revision_did_not_improve",
-                     .path = .path)
+      if (nxt$confidence > prev$confidence) {
+        write_dpo(section_id, prompt, chosen = nxt$draft, rejected = prev$draft,
+                  source = "intermediate", .path = .path)
+      } else {
+        write_negative(section_id, prompt, draft = nxt$draft,
+                       reject_reason = "revision_did_not_improve",
+                       .path = .path)
+      }
+      count <- count + 1L
     }
-    count <- count + 1L
   }
+
+  # Phase 3.2 — Claude cap-hit revision pair, if Claude produced a new draft.
+  if (cap_idx > 0L && cap_idx >= 2L) {
+    claude_entry   <- iteration_log[[cap_idx]]
+    ollama_entries <- iteration_log[seq_len(cap_idx - 1L)]
+    if (.entry_has_usable_draft(claude_entry) && length(ollama_entries) > 0L) {
+      # Best Ollama draft = highest-confidence prior draft (mirrors best_draft logic
+      # in draft_with_refinement). Tie-break: latest iteration wins.
+      confidences <- vapply(ollama_entries, function(e) {
+        if (.entry_has_confidence(e)) as.numeric(e$confidence) else -Inf
+      }, numeric(1))
+      have_draft <- vapply(ollama_entries, .entry_has_usable_draft, logical(1))
+      eligible   <- which(have_draft & is.finite(confidences))
+      if (length(eligible) > 0L) {
+        best_local_idx <- eligible[which.max(confidences[eligible])]
+        best_ollama    <- ollama_entries[[best_local_idx]]
+        if (!identical(best_ollama$draft, claude_entry$draft)) {
+          write_dpo(section_id, prompt,
+                    chosen = claude_entry$draft, rejected = best_ollama$draft,
+                    source = "claude_escalation", .path = .path)
+          count <- count + 1L
+        }
+      }
+    }
+  }
+
   invisible(count)
 }
 
@@ -124,7 +177,7 @@ generate_training_data <- function(.queue_path    = REVIEW_QUEUE_PATH,
     } else if (row$status == "accepted_with_edit") {
       chosen <- if (is.na(row$final_draft)) draft else row$final_draft
       write_dpo(sid, prompt, chosen = chosen, rejected = draft,
-                .path = .training_path)
+                source = "human_edit", .path = .training_path)
     } else {
       reason <- if ("reject_reason" %in% names(row) && !is.na(row$reject_reason))
         row$reject_reason else NULL
