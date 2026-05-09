@@ -398,9 +398,11 @@ New file `R/story.R`.
 
 ### Step 3.3 — `story.R` or standalone: `refresh_few_shots()`
 
-- [ ] Pulls recent high-confidence approved vault notes into the few-shot pool
-- [ ] Low urgency; implement after 3–4 sessions under new system when vault has
+- [x] Pulls recent high-confidence approved vault notes into the few-shot pool
+- [x] Low urgency; implement after 3–4 sessions under new system when vault has
   enough approved content to be useful
+  *(Implemented in `R/training.R`; cross-references `sft.jsonl` with
+  `queue.csv` confidence and writes to `training_data/few_shots_pool.jsonl`.)*
 
 ---
 

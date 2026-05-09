@@ -436,3 +436,122 @@ test_that("accepted_with_edit DPO is tagged source='human_edit'", {
   rec <- read_jsonl(file.path(tmp_t, "dpo.jsonl"))[[1]]
   expect_equal(rec$source, "human_edit")
 })
+
+# --- Step 3.3: refresh_few_shots() ------------------------------------------
+
+# Helper: end-to-end set up an accepted record at a given confidence and run
+# generate_training_data so sft.jsonl gets populated.
+.seed_accepted <- function(section_id, confidence, draft, prompt_text,
+                           tmp_q, tmp_t) {
+  enqueue_review(draft,
+                 list(verdict = "approved", confidence = confidence,
+                      issues = list(), source_quotes = list()),
+                 section_id, "source text",
+                 prompt = prompt_text, .queue_path = tmp_q)
+  consolidate_queue(.queue_path = tmp_q)
+  resolve_item(section_id, "accepted", .queue_path = tmp_q)
+  generate_training_data(.queue_path = tmp_q, .training_path = tmp_t)
+}
+
+test_that("refresh_few_shots returns 0 when no sft.jsonl exists", {
+  tmp_q <- local_tempdir()
+  tmp_t <- local_tempdir()
+  # queue exists but no training data yet
+  enqueue_review("d", make_verdict_list(), "S2e10", "s", .queue_path = tmp_q)
+  consolidate_queue(.queue_path = tmp_q)
+  n <- refresh_few_shots(.queue_path = tmp_q, .training_path = tmp_t)
+  expect_equal(n, 0L)
+})
+
+test_that("refresh_few_shots returns 0 when queue.csv is missing", {
+  tmp_q <- local_tempdir()
+  tmp_t <- local_tempdir()
+  # Put a stray sft.jsonl but no queue
+  write_sft("S2e10", "p", "c", .path = tmp_t)
+  n <- refresh_few_shots(.queue_path = tmp_q, .training_path = tmp_t)
+  expect_equal(n, 0L)
+})
+
+test_that("refresh_few_shots writes pool of high-confidence accepted records", {
+  tmp_q <- local_tempdir()
+  tmp_t <- local_tempdir()
+  .seed_accepted("S2e10", 0.92, "completion-1", "prompt-1", tmp_q, tmp_t)
+  .seed_accepted("S2e11", 0.90, "completion-2", "prompt-2", tmp_q, tmp_t)
+  n <- refresh_few_shots(.queue_path = tmp_q, .training_path = tmp_t,
+                          confidence_threshold = 0.85)
+  expect_equal(n, 2L)
+  pool <- read_jsonl(file.path(tmp_t, "few_shots_pool.jsonl"))
+  expect_length(pool, 2L)
+  ids <- vapply(pool, function(r) r$section_id, character(1))
+  expect_setequal(ids, c("S2e10", "S2e11"))
+})
+
+test_that("refresh_few_shots respects confidence_threshold", {
+  tmp_q <- local_tempdir()
+  tmp_t <- local_tempdir()
+  .seed_accepted("HIGH", 0.95, "good", "prompt-h", tmp_q, tmp_t)
+  .seed_accepted("LOW",  0.60, "weak", "prompt-l", tmp_q, tmp_t)
+  n <- refresh_few_shots(.queue_path = tmp_q, .training_path = tmp_t,
+                          confidence_threshold = 0.85)
+  expect_equal(n, 1L)
+  pool <- read_jsonl(file.path(tmp_t, "few_shots_pool.jsonl"))
+  expect_equal(pool[[1]]$section_id, "HIGH")
+})
+
+test_that("refresh_few_shots caps output at n", {
+  tmp_q <- local_tempdir()
+  tmp_t <- local_tempdir()
+  for (i in 1:5) {
+    .seed_accepted(paste0("S", i), 0.90, paste0("c", i),
+                   paste0("p", i), tmp_q, tmp_t)
+  }
+  n <- refresh_few_shots(n = 3L, .queue_path = tmp_q, .training_path = tmp_t)
+  expect_equal(n, 3L)
+  pool <- read_jsonl(file.path(tmp_t, "few_shots_pool.jsonl"))
+  expect_length(pool, 3L)
+})
+
+test_that("refresh_few_shots prefers most recent records when capping", {
+  tmp_q <- local_tempdir()
+  tmp_t <- local_tempdir()
+  # Manually write SFT records with increasing created_at timestamps
+  records <- list(
+    list(type="sft", section_id="OLD",  prompt="p", completion="c-old",
+         created_at="2024-01-01T00:00:00"),
+    list(type="sft", section_id="MID",  prompt="p", completion="c-mid",
+         created_at="2025-01-01T00:00:00"),
+    list(type="sft", section_id="NEW",  prompt="p", completion="c-new",
+         created_at="2026-01-01T00:00:00")
+  )
+  dir.create(tmp_t, showWarnings = FALSE, recursive = TRUE)
+  for (r in records) {
+    cat(jsonlite::toJSON(r, auto_unbox = TRUE), "\n", sep = "",
+        file = file.path(tmp_t, "sft.jsonl"), append = TRUE)
+  }
+  # Build a queue.csv with all three at high confidence
+  q <- data.frame(
+    section_id = c("OLD","MID","NEW"),
+    confidence = c(0.95, 0.95, 0.95),
+    stringsAsFactors = FALSE
+  )
+  dir.create(tmp_q, showWarnings = FALSE, recursive = TRUE)
+  readr::write_csv(q, file.path(tmp_q, "queue.csv"))
+
+  refresh_few_shots(n = 1L, .queue_path = tmp_q, .training_path = tmp_t)
+  pool <- read_jsonl(file.path(tmp_t, "few_shots_pool.jsonl"))
+  expect_length(pool, 1L)
+  expect_equal(pool[[1]]$section_id, "NEW")
+})
+
+test_that("refresh_few_shots overwrites the pool file on each run", {
+  tmp_q <- local_tempdir()
+  tmp_t <- local_tempdir()
+  .seed_accepted("S1", 0.90, "c1", "p1", tmp_q, tmp_t)
+  refresh_few_shots(.queue_path = tmp_q, .training_path = tmp_t)
+  expect_length(read_jsonl(file.path(tmp_t, "few_shots_pool.jsonl")), 1L)
+
+  .seed_accepted("S2", 0.90, "c2", "p2", tmp_q, tmp_t)
+  refresh_few_shots(.queue_path = tmp_q, .training_path = tmp_t)
+  pool <- read_jsonl(file.path(tmp_t, "few_shots_pool.jsonl"))
+  expect_length(pool, 2L)  # not 3L; pool was rewritten, not appended
+})

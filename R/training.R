@@ -158,8 +158,9 @@ generate_training_data <- function(.queue_path    = REVIEW_QUEUE_PATH,
 
   df  <- read_csv(csv_path, show_col_types = FALSE)
   resolved_statuses <- c("accepted", "accepted_with_edit", "rejected")
-  rows <- df[df$status %in% resolved_statuses &
-               !isTRUE(df$training_exported), ]
+  exported <- df$training_exported
+  exported[is.na(exported)] <- FALSE
+  rows <- df[df$status %in% resolved_statuses & !exported, ]
   if (nrow(rows) == 0) return(invisible(0L))
 
   for (i in seq_len(nrow(rows))) {
@@ -198,4 +199,69 @@ generate_training_data <- function(.queue_path    = REVIEW_QUEUE_PATH,
 
   write_csv(df, csv_path)
   invisible(nrow(rows))
+}
+
+# Curates a few-shot pool from accepted, high-confidence training records.
+# Cross-references sft.jsonl (the prompt/completion pairs written by
+# generate_training_data on accepted items) with queue.csv (which holds the
+# critic confidence for each section) and writes the most recent N qualifying
+# records to a separate JSONL file. Pass that file's path to
+# session_prompt(few_shot_paths = ...) to use the pool as in-prompt examples.
+# Returns the count of records written.
+refresh_few_shots <- function(n = 10L,
+                               confidence_threshold = 0.85,
+                               .queue_path     = REVIEW_QUEUE_PATH,
+                               .training_path  = TRAINING_DATA_PATH,
+                               output_filename = "few_shots_pool.jsonl") {
+  sft_path <- file.path(.training_path, "sft.jsonl")
+  csv_path <- file.path(.queue_path,    "queue.csv")
+  if (!file_exists(sft_path)) return(invisible(0L))
+  if (!file_exists(csv_path)) return(invisible(0L))
+
+  sft_lines <- readLines(sft_path, warn = FALSE)
+  sft_lines <- sft_lines[nzchar(sft_lines)]
+  if (length(sft_lines) == 0L) return(invisible(0L))
+
+  sft_records <- lapply(sft_lines, function(ln)
+    tryCatch(fromJSON(ln, simplifyVector = FALSE), error = function(e) NULL))
+  sft_records <- Filter(function(r)
+    !is.null(r) && !is.null(r$section_id) &&
+      !is.null(r$prompt) && !is.null(r$completion),
+    sft_records)
+  if (length(sft_records) == 0L) return(invisible(0L))
+
+  q <- read_csv(csv_path, show_col_types = FALSE)
+  conf_lookup <- function(sid) {
+    idx <- which(q$section_id == sid)
+    if (length(idx) == 0L) return(NA_real_)
+    as.numeric(q$confidence[idx[1L]])
+  }
+
+  qualified <- Filter(function(r) {
+    conf <- conf_lookup(r$section_id)
+    !is.na(conf) && conf >= confidence_threshold
+  }, sft_records)
+  if (length(qualified) == 0L) {
+    out_path <- file.path(.training_path, output_filename)
+    if (file_exists(out_path)) file_delete(out_path)
+    dir_create(.training_path, recurse = TRUE)
+    file.create(out_path)
+    return(invisible(0L))
+  }
+
+  ts <- vapply(qualified, function(r)
+    if (!is.null(r$created_at)) as.character(r$created_at) else "",
+    character(1))
+  qualified <- qualified[order(ts, decreasing = TRUE)]
+  qualified <- head(qualified, as.integer(n))
+
+  dir_create(.training_path, recurse = TRUE)
+  out_path <- file.path(.training_path, output_filename)
+  if (file_exists(out_path)) file_delete(out_path)
+  for (r in qualified) {
+    cat(toJSON(r, auto_unbox = TRUE), "\n", sep = "",
+        file = out_path, append = TRUE)
+  }
+
+  invisible(length(qualified))
 }
