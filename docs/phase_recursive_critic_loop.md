@@ -421,7 +421,11 @@ Print after each `run_pipeline()` call:
 | Claude escalations | N |
 | Est. Claude cost | $N.NN |
 
-- [ ] Aggregate from `iteration_log` records written during the run
+- [x] Aggregate from `iteration_log` records written during the run
+  *(Implemented in `scripts/run_pipeline.R` as `.compute_run_summary()` /
+  `.format_run_summary()`. Reads `review_queue/queue.csv` and filters rows
+  enqueued after `run_start_time`. Cap-hit detection parses the per-row
+  `iteration_log` JSON for entries with `escalation_reason == "cap_hit"`.)*
 
 **Dependencies:** Phase 0 (iteration_log must be populated)
 

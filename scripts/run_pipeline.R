@@ -29,6 +29,102 @@
   file.exists(path)
 }
 
+# Returns TRUE if iteration_log JSON contains an entry with
+# escalation_reason == "cap_hit". Iteration logs are JSON strings produced by
+# `toJSON(refinement_result$iteration_log, auto_unbox = TRUE)`.
+.has_cap_hit <- function(iter_log_json) {
+  if (is.null(iter_log_json) || (length(iter_log_json) == 1 && is.na(iter_log_json)) ||
+      !nzchar(iter_log_json) || iter_log_json == "[]") {
+    return(FALSE)
+  }
+  entries <- tryCatch(jsonlite::fromJSON(iter_log_json, simplifyVector = FALSE),
+                      error = function(e) list())
+  any(vapply(entries,
+             function(e) identical(e$escalation_reason, "cap_hit"),
+             logical(1L)))
+}
+
+# Aggregates pipeline metrics from queue rows enqueued during this run.
+# Filters by enqueued_at timestamp >= run_start_time.
+.compute_run_summary <- function(run_start_time, queue_path = REVIEW_QUEUE_PATH) {
+  if (!exists("read_queue", mode = "function")) source("R/queue.R")
+
+  empty <- list(
+    sections_processed     = 0L,
+    passed_first_attempt   = 0L,
+    avg_iterations_flagged = NA_real_,
+    hit_iteration_cap      = 0L,
+    claude_escalations     = 0L,
+    est_claude_cost_usd    = 0
+  )
+
+  csv_path <- file.path(queue_path, "queue.csv")
+  if (!file.exists(csv_path)) return(empty)
+
+  df <- tryCatch(
+    read_queue(.queue_path = queue_path, status = NULL),
+    error = function(e) NULL
+  )
+  if (is.null(df) || nrow(df) == 0) return(empty)
+
+  # `enqueued_at` is written as local-time without an offset, but readr parses
+  # it as UTC. Re-anchor to the local timezone so it compares apples-to-apples
+  # with `run_start_time` (a local POSIXct).
+  enq_str <- if (inherits(df$enqueued_at, "POSIXt"))
+    format(df$enqueued_at, "%Y-%m-%dT%H:%M:%S", tz = "UTC")
+  else as.character(df$enqueued_at)
+  enq <- suppressWarnings(as.POSIXct(enq_str, format = "%Y-%m-%dT%H:%M:%S",
+                                      tz = Sys.timezone()))
+  recent <- !is.na(enq) & enq >= run_start_time
+  df_run <- df[recent, , drop = FALSE]
+  if (nrow(df_run) == 0) return(empty)
+
+  iter_count  <- as.integer(df_run$iteration_count)
+  iter_count[is.na(iter_count)] <- 1L
+  claude_used <- isTRUE_vec(df_run$claude_used)
+  verdict     <- as.character(df_run$verdict)
+
+  cap_hit     <- claude_used & vapply(df_run$iteration_log, .has_cap_hit, logical(1L))
+  flagged_idx <- verdict %in% c("flagged", "rejected")
+  n_claude    <- sum(claude_used, na.rm = TRUE)
+
+  list(
+    sections_processed     = nrow(df_run),
+    passed_first_attempt   = sum(iter_count == 1L & !claude_used &
+                                   verdict == "approved", na.rm = TRUE),
+    avg_iterations_flagged = if (sum(flagged_idx) > 0)
+                               mean(iter_count[flagged_idx], na.rm = TRUE)
+                             else NA_real_,
+    hit_iteration_cap      = sum(cap_hit, na.rm = TRUE),
+    claude_escalations     = n_claude,
+    est_claude_cost_usd    = n_claude * 0.04
+  )
+}
+
+# Coerce a queue column (which may be character "TRUE"/"FALSE" after CSV
+# round-trip, or already logical) to a logical vector with NA → FALSE.
+isTRUE_vec <- function(x) {
+  v <- as.logical(x)
+  v[is.na(v)] <- FALSE
+  v
+}
+
+.format_run_summary <- function(s) {
+  avg_str <- if (is.na(s$avg_iterations_flagged)) "\u2014"
+             else sprintf("%.1f", s$avg_iterations_flagged)
+  paste(
+    "",
+    "Run summary:",
+    sprintf("  Sections processed:                %d", s$sections_processed),
+    sprintf("  Passed first attempt:              %d", s$passed_first_attempt),
+    sprintf("  Avg iterations (flagged sections): %s", avg_str),
+    sprintf("  Hit iteration cap:                 %d", s$hit_iteration_cap),
+    sprintf("  Claude escalations:                %d", s$claude_escalations),
+    sprintf("  Est. Claude cost:                  $%.2f", s$est_claude_cost_usd),
+    sep = "\n"
+  )
+}
+
 # Hard-stop guard: when PROCESS_ONE_SESSION is TRUE, refuses to run if the
 # previous session has neither a note nor a placeholder in the vault. This
 # prevents the outer loop from advancing out of order.
@@ -72,6 +168,8 @@ run_pipeline <- function(max_retries = 3) {
 
   .assert_session_ordering()
 
+  run_start <- Sys.time()
+
   for (i in seq_len(max_retries)) {
     targets::tar_make()
     failed <- targets::tar_errored()
@@ -90,5 +188,8 @@ run_pipeline <- function(max_retries = 3) {
   } else {
     message("Pipeline complete — no errors.")
   }
+
+  message(.format_run_summary(.compute_run_summary(run_start)))
+
   invisible(failed)
 }
