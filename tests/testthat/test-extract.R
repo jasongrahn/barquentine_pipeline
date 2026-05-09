@@ -449,3 +449,105 @@ test_that("revise_note propagates timed_out sentinel from ollama_generate", {
                         model = "m", base_url = "http://localhost:11434")
   expect_identical(result, list(timed_out = TRUE, verdict = NULL))
 })
+
+# --- draft_with_refinement() -------------------------------------------------
+
+source(test_path("../../R/critic.R"))
+
+.approved_verdict <- function(confidence = 0.92) {
+  list(verdict = "approved", confidence = confidence,
+       issues = list(), source_quotes = list("confirming quote"),
+       escalated = FALSE)
+}
+.flagged_verdict <- function(confidence = 0.55) {
+  list(verdict = "flagged", confidence = confidence,
+       issues = list("an issue"), source_quotes = list("a quote"),
+       escalated = FALSE)
+}
+
+test_that("draft_with_refinement exists and has correct signature", {
+  expect_true(is.function(draft_with_refinement))
+  args <- names(formals(draft_with_refinement))
+  expect_true("source_text" %in% args)
+  expect_true("section_id"  %in% args)
+  expect_true("note_type"   %in% args)
+})
+
+test_that("draft_with_refinement returns list with required fields", {
+  assign("generate_note",    function(...) "draft text", envir = globalenv())
+  assign("review_note",      function(...) .approved_verdict(), envir = globalenv())
+  on.exit({
+    rm("generate_note", "review_note", envir = globalenv())
+  }, add = TRUE)
+
+  src <- paste(rep("word", 150), collapse = " ")
+  result <- draft_with_refinement(src, "S2e33_test1")
+  expect_true(is.list(result))
+  expected_fields <- c("best_draft", "best_confidence", "final_verdict",
+                        "iteration_log", "iteration_count", "claude_used",
+                        "escalation_reason")
+  expect_true(all(expected_fields %in% names(result)))
+})
+
+test_that("draft_with_refinement returns approved draft without revision when first critic passes", {
+  assign("generate_note", function(...) "first draft", envir = globalenv())
+  assign("review_note",   function(...) .approved_verdict(0.90), envir = globalenv())
+  on.exit({
+    rm("generate_note", "review_note", envir = globalenv())
+  }, add = TRUE)
+
+  src    <- paste(rep("word", 150), collapse = " ")
+  result <- draft_with_refinement(src, "S2e33_test2")
+  expect_equal(result$best_draft,      "first draft")
+  expect_equal(result$best_confidence, 0.90)
+  expect_equal(result$iteration_count, 1L)
+  expect_false(result$claude_used)
+})
+
+test_that("draft_with_refinement iteration_log has one record per iteration", {
+  assign("generate_note", function(...) "draft", envir = globalenv())
+  assign("review_note",   function(...) .approved_verdict(), envir = globalenv())
+  on.exit({
+    rm("generate_note", "review_note", envir = globalenv())
+  }, add = TRUE)
+
+  src    <- paste(rep("word", 150), collapse = " ")
+  result <- draft_with_refinement(src, "S2e33_test3")
+  expect_equal(length(result$iteration_log), 1L)
+  entry  <- result$iteration_log[[1]]
+  expect_true(all(c("section_id", "iteration", "model", "verdict",
+                     "confidence", "issues_count", "escalated_to_claude",
+                     "timestamp") %in% names(entry)))
+})
+
+test_that("draft_with_refinement escalation_reason is NULL when no timeout or cap", {
+  assign("generate_note", function(...) "draft", envir = globalenv())
+  assign("review_note",   function(...) .approved_verdict(), envir = globalenv())
+  on.exit({
+    rm("generate_note", "review_note", envir = globalenv())
+  }, add = TRUE)
+
+  src    <- paste(rep("word", 150), collapse = " ")
+  result <- draft_with_refinement(src, "S2e33_test4")
+  expect_null(result$escalation_reason)
+})
+
+test_that("draft_with_refinement escalates to Claude on review_note timeout", {
+  call_seq <- 0L
+  assign("generate_note", function(...) "draft", envir = globalenv())
+  assign("review_note",
+         function(...) list(timed_out = TRUE, verdict = NULL),
+         envir = globalenv())
+  claude_called <- FALSE
+  assign("claude_review_note",
+         function(...) { claude_called <<- TRUE; .approved_verdict(0.88) },
+         envir = globalenv())
+  on.exit({
+    rm("generate_note", "review_note", "claude_review_note", envir = globalenv())
+  }, add = TRUE)
+
+  src    <- paste(rep("word", 150), collapse = " ")
+  result <- draft_with_refinement(src, "S2e33_test5")
+  expect_true(claude_called)
+  expect_equal(result$escalation_reason, "ollama_timeout")
+})

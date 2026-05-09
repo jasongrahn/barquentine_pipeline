@@ -142,6 +142,158 @@ revise_note <- function(draft, issues, quotes, source_text,
   result
 }
 
+draft_with_refinement <- function(source_text, section_id, note_type = "session",
+                                   few_shot_paths = NULL,
+                                   model          = OLLAMA_MODEL,
+                                   base_url       = OLLAMA_BASE_URL) {
+  # Ensure temp dir exists for per-iteration checkpoints
+  dir.create("temp", showWarnings = FALSE, recursive = FALSE)
+
+  # Degraded-Ollama guard: scoped to this invocation only
+  ollama_critic_degraded <- FALSE
+  had_timeout            <- FALSE
+
+  best_draft      <- NULL
+  best_confidence <- -Inf
+  iteration_log   <- list()
+  claude_used     <- FALSE
+  escalation_reason <- NULL
+
+  for (iter in seq_len(DRAFT_MAX_ITERATIONS)) {
+
+    # --- Generate or revise ---
+    if (iter == 1L) {
+      draft <- if (note_type == "session") {
+        generate_note(section_id, source_text,
+                      few_shot_paths = few_shot_paths,
+                      model = model, base_url = base_url)
+      } else {
+        NULL  # entity note generation handled by caller
+      }
+    } else {
+      last_verdict <- iteration_log[[iter - 1L]]
+      draft <- revise_note(draft, last_verdict$issues_raw, last_verdict$quotes_raw,
+                           source_text, model = model, base_url = base_url)
+      if (is.list(draft) && isTRUE(draft$timed_out)) {
+        draft <- best_draft  # fall back to best so far; escalate below
+      }
+    }
+
+    # Write iteration checkpoint
+    temp_path <- file.path("temp", paste0(section_id, "_iter_", iter, ".md"))
+    if (!is.null(draft) && is.character(draft)) {
+      writeLines(draft, temp_path)
+    }
+
+    # --- Critic call: route to Claude if Ollama is degraded ---
+    verdict <- if (ollama_critic_degraded) {
+      claude_review_note(draft, source_text)
+    } else {
+      review_note(draft, source_text)
+    }
+
+    # Handle timeout sentinel from review_note()
+    if (is.list(verdict) && isTRUE(verdict$timed_out)) {
+      ollama_critic_degraded <- TRUE
+      had_timeout            <- TRUE
+      escalation_reason      <- "ollama_timeout"
+      verdict                <- claude_review_note(draft, source_text)
+    }
+
+    # Normalize fields that may be missing
+    v_verdict    <- verdict$verdict    %||% "parse_error"
+    v_confidence <- if (is.null(verdict$confidence) || is.na(verdict$confidence)) 0 else verdict$confidence
+    v_issues     <- if (is.null(verdict$issues)) list() else verdict$issues
+    v_quotes     <- if (is.null(verdict$source_quotes)) list() else verdict$source_quotes
+    escalated    <- isTRUE(verdict$escalated) || ollama_critic_degraded
+
+    log_entry <- list(
+      section_id          = section_id,
+      iteration           = iter,
+      model               = model,
+      verdict             = v_verdict,
+      confidence          = v_confidence,
+      issues_count        = length(v_issues),
+      issues_raw          = v_issues,
+      quotes_raw          = v_quotes,
+      escalated_to_claude = escalated,
+      escalation_reason   = if (escalated && !is.null(escalation_reason))
+                              escalation_reason else NULL,
+      timestamp           = Sys.time()
+    )
+    iteration_log <- c(iteration_log, list(log_entry))
+
+    # Track best draft (highest confidence seen, not latest)
+    if (v_confidence > best_confidence) {
+      best_draft      <- draft
+      best_confidence <- v_confidence
+    }
+
+    # Break on approval or cap
+    if (v_verdict == "approved" || iter == DRAFT_MAX_ITERATIONS) break
+  }
+
+  # On cap hit with no approval: Claude full-revision escalation
+  if (iteration_log[[length(iteration_log)]]$verdict != "approved" &&
+      length(iteration_log) >= DRAFT_MAX_ITERATIONS) {
+    cap_verdict      <- claude_review_note(best_draft, source_text)
+    claude_used      <- TRUE
+    escalation_reason <- if (is.null(escalation_reason)) "cap_hit" else escalation_reason
+
+    c_verdict    <- cap_verdict$verdict    %||% "parse_error"
+    c_confidence <- if (is.null(cap_verdict$confidence) || is.na(cap_verdict$confidence))
+                      0 else cap_verdict$confidence
+    c_issues     <- if (is.null(cap_verdict$issues)) list() else cap_verdict$issues
+    c_quotes     <- if (is.null(cap_verdict$source_quotes)) list() else cap_verdict$source_quotes
+
+    cap_entry <- list(
+      section_id          = section_id,
+      iteration           = length(iteration_log) + 1L,
+      model               = "claude (cap_hit escalation)",
+      verdict             = c_verdict,
+      confidence          = c_confidence,
+      issues_count        = length(c_issues),
+      issues_raw          = c_issues,
+      quotes_raw          = c_quotes,
+      escalated_to_claude = TRUE,
+      escalation_reason   = "cap_hit",
+      timestamp           = Sys.time()
+    )
+    iteration_log <- c(iteration_log, list(cap_entry))
+
+    if (c_confidence > best_confidence) {
+      best_draft      <- best_draft  # Claude didn't produce a new draft here, it reviewed
+      best_confidence <- c_confidence
+    }
+  }
+
+  # Clean up temp files on successful completion
+  for (i in seq_len(length(iteration_log))) {
+    p <- file.path("temp", paste0(section_id, "_iter_", i, ".md"))
+    if (file.exists(p)) file.remove(p)
+  }
+
+  # Strip internal fields from log before returning
+  public_log <- lapply(iteration_log, function(e) {
+    e$issues_raw <- NULL
+    e$quotes_raw <- NULL
+    e
+  })
+
+  list(
+    best_draft        = best_draft,
+    best_confidence   = best_confidence,
+    final_verdict     = iteration_log[[length(iteration_log)]],
+    iteration_log     = public_log,
+    iteration_count   = length(iteration_log),
+    claude_used       = claude_used,
+    escalation_reason = escalation_reason
+  )
+}
+
+# Null-coalescing helper (base R)
+`%||%` <- function(x, y) if (is.null(x)) y else x
+
 .regen_context_block <- function(prior_draft, critic_findings, user_feedback) {
   parts <- character(0)
   if (!is.null(prior_draft) && nzchar(trimws(prior_draft)))
