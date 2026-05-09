@@ -54,31 +54,30 @@ list(
     format = "file"
   ),
 
-  # --- Session notes — qwen3.5:9b generates one draft per section ------------
+  # --- Session notes — inner loop: generate → critic → revise (Phase 0) ------
+  # draft_with_refinement() owns the full generate→critic→revise cycle.
+  # Loop is internal to the function; targets sees one result per section.
+  # DRAFT_MAX_ITERATIONS=1L for Phase 0 rollout.
   tar_target(
-    session_draft,
-    generate_note(section_ids, source_b_sections,
-                  few_shot_paths = sft_example_files),
+    session_refined,
+    draft_with_refinement(
+      source_text    = source_b_sections,
+      section_id     = section_ids,
+      note_type      = "session",
+      few_shot_paths = sft_example_files
+    ),
     pattern = map(source_b_sections, section_ids)
   ),
 
-  # --- Critic — llama3.1:8b fact-checks each draft ---------------------------
-  tar_target(
-    critic_verdict,
-    review_note(session_draft, source_b_sections),
-    pattern = map(session_draft, source_b_sections)
-  ),
-
-  # --- Router — writes to vault (auto-approve) or staging queue --------------
+  # --- Router — best_draft from inner loop → staging queue ------------------
   tar_target(
     dispatched,
     dispatch_note(
-      draft        = session_draft,
-      verdict_list = critic_verdict,
-      section_id   = section_ids,
-      source_text  = source_b_sections
+      refinement_result = session_refined,
+      section_id        = section_ids,
+      source_text       = source_b_sections
     ),
-    pattern = map(session_draft, critic_verdict, section_ids, source_b_sections)
+    pattern = map(session_refined, section_ids, source_b_sections)
   ),
 
   # --- Consolidate staging files into queue.csv (sequential) ----------------
