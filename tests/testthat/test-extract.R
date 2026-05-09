@@ -69,6 +69,35 @@ test_that("session_prompt contains review_required instruction", {
   expect_true(grepl("review_required", result))
 })
 
+test_that("session_prompt without story_so_far has no campaign context block", {
+  result <- session_prompt("S2e33", "Some content.")
+  expect_false(grepl("CAMPAIGN CONTEXT", result, fixed = TRUE))
+  expect_false(grepl("Story So Far", result, fixed = TRUE))
+})
+
+test_that("session_prompt with story_so_far prepends campaign context block", {
+  ssf <- "The party is currently aboard the Barquentine, en route to Hoovale."
+  result <- session_prompt("S2e33", "Some content.", story_so_far = ssf)
+  expect_true(grepl("CAMPAIGN CONTEXT", result, fixed = TRUE))
+  expect_true(grepl("Story So Far", result, fixed = TRUE))
+  expect_true(grepl(ssf, result, fixed = TRUE))
+})
+
+test_that("session_prompt with empty/whitespace story_so_far does NOT add the block", {
+  result_empty <- session_prompt("S2e33", "Some content.", story_so_far = "")
+  result_ws    <- session_prompt("S2e33", "Some content.", story_so_far = "   \n   ")
+  expect_false(grepl("CAMPAIGN CONTEXT", result_empty, fixed = TRUE))
+  expect_false(grepl("CAMPAIGN CONTEXT", result_ws,    fixed = TRUE))
+})
+
+test_that("session_prompt story_so_far precedes source text in the prompt", {
+  ssf    <- "PRIOR_CONTEXT_MARKER"
+  result <- session_prompt("S2e33", "SOURCE_BODY_MARKER", story_so_far = ssf)
+  pos_ssf    <- regexpr("PRIOR_CONTEXT_MARKER", result, fixed = TRUE)
+  pos_source <- regexpr("SOURCE_BODY_MARKER",   result, fixed = TRUE)
+  expect_true(pos_ssf < pos_source)
+})
+
 # --- npc_prompt() ------------------------------------------------------------
 
 test_that("npc_prompt returns a character string", {

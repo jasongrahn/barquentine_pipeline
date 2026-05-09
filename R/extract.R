@@ -12,8 +12,18 @@ load_campaign_facts <- function(path = "config/campaign_facts.md") {
   paste(readLines(path, warn = FALSE), collapse = "\n")
 }
 
-session_prompt <- function(episode_id, section_text, few_shot_paths = NULL) {
+session_prompt <- function(episode_id, section_text, few_shot_paths = NULL,
+                           story_so_far = NULL) {
   few_shot_block <- .build_few_shot_block(few_shot_paths)
+  story_block    <- if (!is.null(story_so_far) && nzchar(trimws(story_so_far))) {
+    paste0(
+      "CAMPAIGN CONTEXT — Story So Far (use only to avoid contradictions; ",
+      "do not add details from here that are absent in the source text below):\n",
+      story_so_far, "\n\n"
+    )
+  } else {
+    ""
+  }
   glue(
 "You are building an Obsidian markdown wiki for a D&D 5e Spelljammer campaign called Barquentine.
 
@@ -29,7 +39,7 @@ RULES — follow exactly:
 7. Output only the markdown note. No explanation, no preamble, no code fences.
 8. The source text is an automated transcript and may contain garbled, split, or misheard words. Do not guess or correct them — write [unclear] in place of any word or phrase you cannot confidently interpret from context.
 
-{few_shot_block}SOURCE TEXT (episode: {episode_id}):
+{story_block}{few_shot_block}SOURCE TEXT (episode: {episode_id}):
 {section_text}
 
 OUTPUT FORMAT:
@@ -66,11 +76,14 @@ review_required: false
 
 generate_note <- function(episode_id, section_text,
                           few_shot_paths = NULL,
+                          story_so_far   = NULL,
                           model       = OLLAMA_MODEL,
                           base_url    = OLLAMA_BASE_URL,
                           num_predict = 2400L) {
   if (is_sparse(section_text)) return(NULL)
-  prompt <- session_prompt(episode_id, section_text, few_shot_paths = few_shot_paths)
+  prompt <- session_prompt(episode_id, section_text,
+                           few_shot_paths = few_shot_paths,
+                           story_so_far   = story_so_far)
   ollama_generate(prompt, GENERATOR_SYSTEM_PROMPT, model = model, base_url = base_url,
                   options = list(num_predict = num_predict))
 }
@@ -144,6 +157,7 @@ revise_note <- function(draft, issues, quotes, source_text,
 
 draft_with_refinement <- function(source_text, section_id, note_type = "session",
                                    few_shot_paths  = NULL,
+                                   story_so_far    = NULL,
                                    entity_name     = NULL,
                                    source_passages = NULL,
                                    prior_draft     = NULL,
@@ -169,6 +183,7 @@ draft_with_refinement <- function(source_text, section_id, note_type = "session"
       draft <- if (note_type == "session") {
         generate_note(section_id, source_text,
                       few_shot_paths = few_shot_paths,
+                      story_so_far   = story_so_far,
                       model = model, base_url = base_url)
       } else {
         generate_entity_note(

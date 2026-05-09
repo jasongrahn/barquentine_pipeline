@@ -16,6 +16,7 @@ source("R/claude.R")
 source("R/extract.R")
 source("R/critic.R")
 source("R/router.R")
+source("R/story.R")
 source("R/queue.R")
 source("R/wikilinks.R")
 source("R/writer.R")
@@ -54,6 +55,15 @@ list(
     format = "file"
   ),
 
+  # --- Story So Far — campaign context for the current session generation ---
+  # Reads the highest-numbered snapshot prior to CURRENT_SESSION (or NULL if
+  # no snapshot exists yet). Generator uses this to avoid contradicting prior
+  # established facts. Updated post-session via update_story_so_far().
+  tar_target(
+    story_so_far_context,
+    read_story_so_far(CURRENT_SESSION, VAULT_PATH)
+  ),
+
   # --- Session notes — inner loop: generate → critic → revise (Phase 0) ------
   # draft_with_refinement() owns the full generate→critic→revise cycle.
   # Loop is internal to the function; targets sees one result per section.
@@ -64,7 +74,8 @@ list(
       source_text    = source_b_sections,
       section_id     = section_ids,
       note_type      = "session",
-      few_shot_paths = sft_example_files
+      few_shot_paths = sft_example_files,
+      story_so_far   = story_so_far_context
     ),
     pattern = map(source_b_sections, section_ids)
   ),
