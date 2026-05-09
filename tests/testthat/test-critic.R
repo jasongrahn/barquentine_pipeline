@@ -153,3 +153,19 @@ test_that("review_note returns parse_error structure when model returns bad JSON
                         base_url = "http://localhost:11434")
   expect_equal(result$verdict, "parse_error")
 })
+
+test_that("review_note propagates timed_out sentinel from ollama_generate", {
+  library(httr2)
+  local_mocked_responses(function(req) {
+    cond <- structure(
+      list(message = "Timeout was reached", call = NULL),
+      class = c("httr2_error", "error", "condition")
+    )
+    stop(cond)
+  })
+  result <- review_note("draft", "short source", model = "m",
+                        base_url = "http://localhost:11434")
+  expect_true(is.list(result))
+  expect_true(isTRUE(result$timed_out))
+  expect_null(result$verdict)
+})

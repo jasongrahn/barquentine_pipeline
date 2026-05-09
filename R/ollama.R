@@ -28,11 +28,26 @@ library(purrr)
 ollama_generate <- function(prompt, system_prompt, model = OLLAMA_MODEL,
                             base_url = OLLAMA_BASE_URL, format = NULL,
                             options = NULL, think = NULL) {
-  content <- .build_ollama_request(prompt, system_prompt, model, base_url,
-                                   format, options, think) |>
-    req_perform() |>
-    resp_body_json() |>
-    pluck("message", "content")
+  # On httr2_error (which covers curl timeout), return a sentinel the caller
+  # can distinguish from empty content. Only httr2_error is caught here —
+  # malformed JSON, schema violations, and empty content are distinct failure
+  # modes and must not be silently swallowed as timeouts.
+  # claude_review_note() in R/claude.R is the direct escalation target from the
+  # inner loop (draft_with_refinement); no signature change needed there.
+  content <- tryCatch(
+    .build_ollama_request(prompt, system_prompt, model, base_url,
+                          format, options, think) |>
+      req_perform() |>
+      resp_body_json() |>
+      pluck("message", "content"),
+    httr2_error = function(e) {
+      message(sprintf("Ollama timeout/error for model %s: %s", model, conditionMessage(e)))
+      list(timed_out = TRUE, verdict = NULL)
+    }
+  )
+
+  # Propagate the timeout sentinel directly without further processing
+  if (is.list(content) && isTRUE(content$timed_out)) return(content)
 
   if (is.null(content) || !nzchar(trimws(content))) {
     warning(sprintf("Empty content from %s (prompt %d chars)", model, nchar(prompt)))
