@@ -155,6 +155,56 @@ revise_note <- function(draft, issues, quotes, source_text,
   result
 }
 
+# Verdict tier ranking for select_best_draft(). approved beats flagged beats
+# rejected; parse_error and skipped iterations are not selectable.
+.verdict_tier <- function(v) {
+  switch(v %||% "",
+    approved = 3L,
+    flagged  = 2L,
+    rejected = 1L,
+    0L
+  )
+}
+
+# Pick the iteration whose draft we surface to the reviewer.
+# Rule: highest verdict tier wins (approved > flagged > rejected). Within tier,
+# fewest issues wins; final tiebreak is the latest iteration (the loop is
+# supposed to be improving the draft, so trust later passes).
+# parse_error / skipped iterations are not selectable. If every iteration is
+# parse_error / skipped, fall back to the latest iteration that has a draft.
+select_best_draft <- function(iteration_log) {
+  if (length(iteration_log) == 0L) {
+    return(list(draft = NULL, entry = NULL, iteration = NA_integer_))
+  }
+
+  has_draft <- function(e) is.character(e$draft) && nzchar(e$draft) && !is.na(e$draft)
+  candidates <- Filter(function(e) has_draft(e) && .verdict_tier(e$verdict) > 0L,
+                       iteration_log)
+
+  if (length(candidates) == 0L) {
+    fallback <- NULL
+    for (e in iteration_log) if (has_draft(e)) fallback <- e
+    if (is.null(fallback)) return(list(draft = NULL, entry = NULL, iteration = NA_integer_))
+    return(list(draft = fallback$draft, entry = fallback,
+                iteration = fallback$iteration %||% NA_integer_))
+  }
+
+  max_tier   <- max(vapply(candidates, function(e) .verdict_tier(e$verdict), integer(1)))
+  candidates <- Filter(function(e) .verdict_tier(e$verdict) == max_tier, candidates)
+
+  best <- candidates[[1L]]
+  for (e in candidates[-1L]) {
+    e_iss  <- e$issues_count    %||% 0L
+    b_iss  <- best$issues_count %||% 0L
+    e_iter <- e$iteration       %||% 0L
+    b_iter <- best$iteration    %||% 0L
+    if (e_iss < b_iss || (e_iss == b_iss && e_iter > b_iter)) best <- e
+  }
+
+  list(draft = best$draft, entry = best,
+       iteration = best$iteration %||% NA_integer_)
+}
+
 draft_with_refinement <- function(source_text, section_id, note_type = "session",
                                    few_shot_paths  = NULL,
                                    story_so_far    = NULL,
@@ -170,13 +220,16 @@ draft_with_refinement <- function(source_text, section_id, note_type = "session"
   ollama_critic_degraded <- FALSE
   had_timeout            <- FALSE
 
-  best_draft      <- NULL
-  best_confidence <- -Inf
-  iteration_log   <- list()
-  claude_used     <- FALSE
-  escalation_reason <- NULL
+  iteration_log      <- list()
+  claude_used        <- FALSE
+  escalation_reason  <- NULL
+  iter               <- 0L  # log/sequence number; increments every loop turn
+  useful_iters       <- 0L  # critic responses that counted toward the cap
+  parse_retry_budget <- DRAFT_PARSE_RETRY_BUDGET
+  cap_hit            <- FALSE
 
-  for (iter in seq_len(DRAFT_MAX_ITERATIONS)) {
+  while (useful_iters < DRAFT_MAX_ITERATIONS) {
+    iter <- iter + 1L
 
     # --- Generate or revise ---
     if (iter == 1L) {
@@ -197,10 +250,12 @@ draft_with_refinement <- function(source_text, section_id, note_type = "session"
       }
     } else {
       last_verdict <- iteration_log[[iter - 1L]]
-      draft <- revise_note(draft, last_verdict$issues_raw, last_verdict$quotes_raw,
+      draft <- revise_note(draft, last_verdict$issues, last_verdict$source_quotes,
                            source_text, model = model, base_url = base_url)
       if (is.list(draft) && isTRUE(draft$timed_out)) {
-        draft <- best_draft  # fall back to best so far; escalate below
+        # Timeout: fall back to the previous iteration's draft so the critic
+        # has something to review and the loop can escalate to Claude.
+        draft <- last_verdict$draft
       }
     }
 
@@ -239,8 +294,8 @@ draft_with_refinement <- function(source_text, section_id, note_type = "session"
       verdict             = v_verdict,
       confidence          = v_confidence,
       issues_count        = length(v_issues),
-      issues_raw          = v_issues,
-      quotes_raw          = v_quotes,
+      issues              = v_issues,
+      source_quotes       = v_quotes,
       draft               = if (is.character(draft)) draft else NA_character_,
       escalated_to_claude = escalated,
       escalation_reason   = if (escalated && !is.null(escalation_reason))
@@ -249,20 +304,30 @@ draft_with_refinement <- function(source_text, section_id, note_type = "session"
     )
     iteration_log <- c(iteration_log, list(log_entry))
 
-    # Track best draft (highest confidence seen, not latest)
-    if (v_confidence > best_confidence) {
-      best_draft      <- draft
-      best_confidence <- v_confidence
+    # parse_error iterations don't count toward the cap until the retry budget
+    # is exhausted. The iteration is still logged (so we can debug parse
+    # failures), but the loop gets another turn to produce a real verdict.
+    if (v_verdict == "parse_error" && parse_retry_budget > 0L) {
+      parse_retry_budget <- parse_retry_budget - 1L
+      next
     }
 
-    # Break on approval or cap
-    if (v_verdict == "approved" || iter == DRAFT_MAX_ITERATIONS) break
+    useful_iters <- useful_iters + 1L
+
+    if (v_verdict == "approved") break
+    if (useful_iters >= DRAFT_MAX_ITERATIONS) {
+      cap_hit <- TRUE
+      break
+    }
   }
 
-  # On cap hit with no approval: Claude full-revision escalation
-  if (iteration_log[[length(iteration_log)]]$verdict != "approved" &&
-      length(iteration_log) >= DRAFT_MAX_ITERATIONS) {
-    cap_verdict      <- claude_review_note(best_draft, source_text)
+  # On cap hit with no approval: Claude reviews the current best draft.
+  # Note: Claude does not generate a new draft here; it provides an
+  # authoritative verdict on the best Ollama draft. The cap_entry carries
+  # that draft text so select_best_draft() can promote it if Claude approves.
+  if (cap_hit && iteration_log[[length(iteration_log)]]$verdict != "approved") {
+    pre_claude_best  <- select_best_draft(iteration_log)
+    cap_verdict      <- claude_review_note(pre_claude_best$draft, source_text)
     claude_used      <- TRUE
     escalation_reason <- if (is.null(escalation_reason)) "cap_hit" else escalation_reason
 
@@ -279,19 +344,15 @@ draft_with_refinement <- function(source_text, section_id, note_type = "session"
       verdict             = c_verdict,
       confidence          = c_confidence,
       issues_count        = length(c_issues),
-      issues_raw          = c_issues,
-      quotes_raw          = c_quotes,
-      draft               = if (is.character(best_draft)) best_draft else NA_character_,
+      issues              = c_issues,
+      source_quotes       = c_quotes,
+      draft               = if (is.character(pre_claude_best$draft))
+                              pre_claude_best$draft else NA_character_,
       escalated_to_claude = TRUE,
       escalation_reason   = "cap_hit",
       timestamp           = Sys.time()
     )
     iteration_log <- c(iteration_log, list(cap_entry))
-
-    if (c_confidence > best_confidence) {
-      best_draft      <- best_draft  # Claude didn't produce a new draft here, it reviewed
-      best_confidence <- c_confidence
-    }
   }
 
   # Clean up temp files on successful completion
@@ -300,17 +361,25 @@ draft_with_refinement <- function(source_text, section_id, note_type = "session"
     if (file.exists(p)) file.remove(p)
   }
 
-  # Strip internal fields from log before returning
+  # Pick the draft to surface and the verdict that applies to it.
+  best <- select_best_draft(iteration_log)
+  best_entry <- best$entry
+
+  # Strip per-iter issue payloads from log before returning to keep
+  # iteration_log JSON small. final_verdict (returned separately) keeps them
+  # so the router can write them to queue.csv.
   public_log <- lapply(iteration_log, function(e) {
-    e$issues_raw <- NULL
-    e$quotes_raw <- NULL
+    e$issues        <- NULL
+    e$source_quotes <- NULL
     e
   })
 
   list(
-    best_draft        = best_draft,
-    best_confidence   = best_confidence,
-    final_verdict     = iteration_log[[length(iteration_log)]],
+    best_draft        = best$draft,
+    best_confidence   = if (is.null(best_entry)) -Inf else (best_entry$confidence %||% 0),
+    best_iteration    = best$iteration,
+    final_verdict     = if (is.null(best_entry))
+                          iteration_log[[length(iteration_log)]] else best_entry,
     iteration_log     = public_log,
     iteration_count   = length(iteration_log),
     claude_used       = claude_used,

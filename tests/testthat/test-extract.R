@@ -580,3 +580,113 @@ test_that("draft_with_refinement escalates to Claude on review_note timeout", {
   expect_true(claude_called)
   expect_equal(result$escalation_reason, "ollama_timeout")
 })
+
+# --- select_best_draft() ----------------------------------------------------
+
+.iter_log_entry <- function(iter, verdict, confidence, draft, issues_count = 0L) {
+  list(iteration = iter, verdict = verdict, confidence = confidence,
+       draft = draft, issues_count = issues_count)
+}
+
+test_that("select_best_draft picks approved over higher-confidence rejected", {
+  log <- list(
+    .iter_log_entry(1L, "rejected", 1.00, "rejected draft", 4L),
+    .iter_log_entry(2L, "rejected", 1.00, "still bad",      4L),
+    .iter_log_entry(3L, "flagged",  0.95, "meta",           1L),
+    .iter_log_entry(4L, "approved", 0.97, "approved draft", 0L)
+  )
+  best <- select_best_draft(log)
+  expect_equal(best$draft, "approved draft")
+  expect_equal(best$iteration, 4L)
+})
+
+test_that("select_best_draft picks fewest-issues among rejected when none approved", {
+  log <- list(
+    .iter_log_entry(1L, "rejected", 0.95, "iter1", 6L),
+    .iter_log_entry(3L, "rejected", 0.99, "iter3", 4L),
+    .iter_log_entry(4L, "rejected", 0.97, "iter4", 3L),
+    .iter_log_entry(5L, "rejected", 0.95, "iter5", 4L),
+    .iter_log_entry(6L, "rejected", 0.97, "iter6", 3L)
+  )
+  best <- select_best_draft(log)
+  # Tied at 3 issues (iter4 and iter6), latest wins
+  expect_equal(best$draft, "iter6")
+  expect_equal(best$iteration, 6L)
+})
+
+test_that("select_best_draft prefers latest approved iteration", {
+  log <- list(
+    .iter_log_entry(1L, "approved", 0.85, "early approved", 0L),
+    .iter_log_entry(2L, "rejected", 0.95, "regression",     5L),
+    .iter_log_entry(3L, "approved", 0.78, "late approved",  0L)
+  )
+  best <- select_best_draft(log)
+  expect_equal(best$draft, "late approved")
+})
+
+test_that("select_best_draft skips parse_error iterations", {
+  log <- list(
+    .iter_log_entry(1L, "parse_error", 0,    "junk",    1L),
+    .iter_log_entry(2L, "approved",    0.80, "good",    0L)
+  )
+  best <- select_best_draft(log)
+  expect_equal(best$draft, "good")
+  expect_equal(best$iteration, 2L)
+})
+
+test_that("select_best_draft falls back to latest drafted iter when all parse_error", {
+  log <- list(
+    .iter_log_entry(1L, "parse_error", 0, "first attempt",  1L),
+    .iter_log_entry(2L, "parse_error", 0, "second attempt", 1L)
+  )
+  best <- select_best_draft(log)
+  expect_equal(best$draft, "second attempt")
+})
+
+test_that("select_best_draft returns NULL on empty log", {
+  best <- select_best_draft(list())
+  expect_null(best$draft)
+})
+
+# --- parse_error retry budget ------------------------------------------------
+
+test_that("draft_with_refinement does not let parse_error consume cap slots", {
+  call_count <- 0L
+  parse_error_verdict <- list(verdict = "parse_error", confidence = 0,
+                               issues = list("bad json"), source_quotes = list())
+
+  assign("generate_note",
+         function(...) { call_count <<- call_count + 1L
+                         paste0("draft", call_count) },
+         envir = globalenv())
+  assign("revise_note",
+         function(...) { call_count <<- call_count + 1L
+                         paste0("draft", call_count) },
+         envir = globalenv())
+  # First two critic calls return parse_error (within retry budget),
+  # then approved on the third.
+  critic_seq <- 0L
+  assign("review_note",
+         function(...) {
+           critic_seq <<- critic_seq + 1L
+           if (critic_seq <= 2L) parse_error_verdict
+           else .approved_verdict(0.90)
+         },
+         envir = globalenv())
+  assign("claude_review_note",
+         function(...) .approved_verdict(0.90),
+         envir = globalenv())
+  on.exit({
+    rm("generate_note", "revise_note", "review_note", "claude_review_note",
+       envir = globalenv())
+  }, add = TRUE)
+
+  src    <- paste(rep("word", 150), collapse = " ")
+  result <- draft_with_refinement(src, "S2e33_parse_retry")
+
+  # 3 iterations logged, but only 1 useful (the approved one) was needed —
+  # parse retries did not exhaust the cap.
+  expect_equal(length(result$iteration_log), 3L)
+  expect_equal(result$final_verdict$verdict, "approved")
+  expect_false(result$claude_used)
+})

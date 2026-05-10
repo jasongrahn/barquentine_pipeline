@@ -82,7 +82,7 @@ TRAINING_DATA_PATH <- "training_data"
 # Pipeline state
 # -----------------------------------------------------------------------------
 # Update CURRENT_SESSION before each run
-CURRENT_SESSION <- "s02e42"          # ← update this each session (s01e01 zero-padded format)
+CURRENT_SESSION <- "s02e34"          # ← update this each session (s01e01 zero-padded format)
 
 # Set TRUE to write to /tmp/barquentine-preview/ instead of vault
 # Always do a dry run first when testing new extraction prompts
@@ -92,8 +92,9 @@ DRY_RUN_PATH    <- "/tmp/barquentine-preview"
 # -----------------------------------------------------------------------------
 # Recursive critic loop
 # -----------------------------------------------------------------------------
-DRAFT_MAX_ITERATIONS          <- 1L   # rollout value; raise to 5L after validating on real data
-PROCESS_ONE_SESSION           <- TRUE # enforce strict one-session-at-a-time ordering
+DRAFT_MAX_ITERATIONS          <- 6L   # generator→critic loops before Claude escalation
+DRAFT_PARSE_RETRY_BUDGET      <- 2L   # parse_error retries that do NOT count toward the cap
+PROCESS_ONE_SESSION           <- FALSE # TEMP for s02e09 validation pass; restore to TRUE after
 OLLAMA_TIMEOUT_BACKOFF_SECONDS <- 30L  # sleep after a section that had an Ollama timeout
 
 # -----------------------------------------------------------------------------
