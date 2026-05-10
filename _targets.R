@@ -75,39 +75,25 @@ list(
 
   # --- Session notes — extraction pipeline -----------------------------------
   # Decomposed approach: schema-enforced extraction → R template assembly →
-  # fact-level verification. Replaces the monolithic draft_with_refinement()
-  # for session notes because 8B models handle structured extraction reliably
-  # but fail at source-grounded prose generation.
-  tar_target(
-    session_facts,
-    extract_session_facts(source_b_sections),
-    pattern = map(source_b_sections)
-  ),
-
-  tar_target(
-    session_assembled,
-    assemble_session_note(section_ids, session_facts,
-                          story_so_far = story_so_far_context),
-    pattern = map(section_ids, session_facts)
-  ),
-
-  tar_target(
-    session_verified,
-    verify_facts(session_facts, source_b_sections),
-    pattern = map(session_facts, source_b_sections)
-  ),
-
-  # --- Router — assembled draft + verification → staging queue --------------
+  # fact-level verification. Iterates inside the target (not pattern = map())
+  # so an empty source_b_sections produces an empty list instead of crashing
+  # the DAG with "cannot branch over empty target".
   tar_target(
     dispatched,
-    dispatch_extracted_note(
-      assembled_draft = session_assembled,
-      verification    = session_verified,
-      section_id      = section_ids,
-      source_text     = source_b_sections,
-      note_type       = "session"
-    ),
-    pattern = map(session_assembled, session_verified, section_ids, source_b_sections)
+    {
+      ids <- names(source_b_sections)
+      if (length(ids) == 0L) return(invisible(NULL))
+
+      lapply(ids, function(sid) {
+        src   <- source_b_sections[[sid]]
+        facts <- extract_session_facts(src)
+        draft <- assemble_session_note(sid, facts,
+                                       story_so_far = story_so_far_context)
+        verification <- verify_facts(facts, src)
+        dispatch_extracted_note(draft, verification, sid, src,
+                                note_type = "session")
+      })
+    }
   ),
 
   # --- Consolidate staging files into queue.csv (sequential) ----------------
