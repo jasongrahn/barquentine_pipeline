@@ -14,6 +14,9 @@ source("R/source_c.R")
 source("R/ollama.R")
 source("R/claude.R")
 source("R/extract.R")
+source("R/extract_facts.R")
+source("R/assemble.R")
+source("R/fact_critic.R")
 source("R/critic.R")
 source("R/router.R")
 source("R/story.R")
@@ -27,11 +30,17 @@ source("R/git_commit.R")
 list(
 
   # --- Source B: scan Drive folder, fetch all unprocessed episode docs --------
-  tar_target(source_b_sections,
+  # The fetch updates the registry cache for everything new in the folder, but
+  # only the current session's sections feed the inner loop (one-session-at-a-time
+  # rollout per docs/recursive_critic_loop_design.md "Strict session ordering").
+  tar_target(source_b_sections_all,
              fetch_all_episode_docs(EPISODE_NOTES_FOLDER_ID,
                                     DOC_REGISTRY_PATH,
                                     VAULT_PATH),
              format = "rds"),
+
+  tar_target(source_b_sections,
+             source_b_sections_all[names(source_b_sections_all) == CURRENT_SESSION]),
 
   tar_target(section_ids, names(source_b_sections)),
 
@@ -64,31 +73,41 @@ list(
     read_story_so_far(CURRENT_SESSION, VAULT_PATH)
   ),
 
-  # --- Session notes — inner loop: generate → critic → revise (Phase 0) ------
-  # draft_with_refinement() owns the full generate→critic→revise cycle.
-  # Loop is internal to the function; targets sees one result per section.
-  # DRAFT_MAX_ITERATIONS=1L for Phase 0 rollout.
+  # --- Session notes — extraction pipeline -----------------------------------
+  # Decomposed approach: schema-enforced extraction → R template assembly →
+  # fact-level verification. Replaces the monolithic draft_with_refinement()
+  # for session notes because 8B models handle structured extraction reliably
+  # but fail at source-grounded prose generation.
   tar_target(
-    session_refined,
-    draft_with_refinement(
-      source_text    = source_b_sections,
-      section_id     = section_ids,
-      note_type      = "session",
-      few_shot_paths = sft_example_files,
-      story_so_far   = story_so_far_context
-    ),
-    pattern = map(source_b_sections, section_ids)
+    session_facts,
+    extract_session_facts(source_b_sections),
+    pattern = map(source_b_sections)
   ),
 
-  # --- Router — best_draft from inner loop → staging queue ------------------
+  tar_target(
+    session_assembled,
+    assemble_session_note(section_ids, session_facts,
+                          story_so_far = story_so_far_context),
+    pattern = map(section_ids, session_facts)
+  ),
+
+  tar_target(
+    session_verified,
+    verify_facts(session_facts, source_b_sections),
+    pattern = map(session_facts, source_b_sections)
+  ),
+
+  # --- Router — assembled draft + verification → staging queue --------------
   tar_target(
     dispatched,
-    dispatch_note(
-      refinement_result = session_refined,
-      section_id        = section_ids,
-      source_text       = source_b_sections
+    dispatch_extracted_note(
+      assembled_draft = session_assembled,
+      verification    = session_verified,
+      section_id      = section_ids,
+      source_text     = source_b_sections,
+      note_type       = "session"
     ),
-    pattern = map(session_refined, section_ids, source_b_sections)
+    pattern = map(session_assembled, session_verified, section_ids, source_b_sections)
   ),
 
   # --- Consolidate staging files into queue.csv (sequential) ----------------
@@ -160,24 +179,35 @@ list(
     load_vtt_registry(vtt_registry_path)
   ),
 
-  # VTT file paths — one per registry row with episode_id populated
+  # Scope the VTT phase to CURRENT_SESSION (one-session-at-a-time rollout).
+  # Empty result is fine — downstream pattern = map() collapses to 0 branches.
+  tar_target(
+    vtt_registry_for_current,
+    vtt_registry[vtt_registry$episode_id == CURRENT_SESSION, , drop = FALSE]
+  ),
+
+  # VTT file paths — one per current-session registry row
   tar_target(
     vtt_file_paths,
-    file.path(NAS_MOUNT, vtt_registry$filename)
+    file.path(NAS_MOUNT, vtt_registry_for_current$filename)
   ),
 
   # Episode IDs aligned with vtt_file_paths (same row order)
   tar_target(
     vtt_episode_ids,
-    vtt_registry$episode_id
+    vtt_registry_for_current$episode_id
   ),
 
-  # Entity spotting — one result per VTT file (llama3.1:8b + JSON Schema)
-  # list() wrapper prevents targets from flattening named list when aggregating branches
+  # Entity spotting — one result per VTT file (OLLAMA_CRITIC_MODEL + JSON Schema).
+  # Iterates inside the target instead of using pattern = map() so that an empty
+  # vtt_file_paths (e.g. CURRENT_SESSION has no VTT) produces an empty list
+  # rather than failing the DAG with "cannot branch over empty target".
   tar_target(
     vtt_entities,
-    list(process_vtt_file(vtt_file_paths, vtt_episode_ids)),
-    pattern = map(vtt_file_paths, vtt_episode_ids)
+    if (length(vtt_file_paths) == 0L) list()
+    else lapply(seq_along(vtt_file_paths), function(i) {
+      process_vtt_file(vtt_file_paths[i], vtt_episode_ids[i])
+    })
   ),
 
   # Aggregate passages per entity across all VTT files.

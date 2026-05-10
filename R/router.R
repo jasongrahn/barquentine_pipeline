@@ -71,6 +71,51 @@ dispatch_note <- function(refinement_result, section_id, source_text,
   invisible("enqueued")
 }
 
+dispatch_extracted_note <- function(assembled_draft, verification, section_id,
+                                    source_text,
+                                    note_type       = "session",
+                                    entity_name     = NA_character_,
+                                    dry_run         = DRY_RUN,
+                                    .queue_path     = REVIEW_QUEUE_PATH) {
+  verdict_list <- list(
+    verdict       = verification$verdict,
+    confidence    = verification$confidence,
+    issues        = lapply(
+      Filter(function(r) isFALSE(r$supported), verification$results),
+      function(r) r$claim
+    ),
+    source_quotes = lapply(
+      Filter(function(r) isTRUE(r$supported) && !is.na(r$quote), verification$results),
+      function(r) r$quote
+    )
+  )
+
+  action <- route_verdict(verdict_list$verdict, verdict_list$confidence)
+  if (action == "skip") return(invisible(NULL))
+
+  iter_log_json <- tryCatch(
+    toJSON(list(list(
+      section_id = section_id,
+      iteration  = 1L,
+      model      = "extraction_pipeline",
+      verdict    = verification$verdict,
+      confidence = verification$confidence,
+      issues_count = verification$unsupported,
+      timestamp    = Sys.time()
+    )), auto_unbox = TRUE),
+    error = function(e) "[]"
+  )
+
+  enqueue_review(assembled_draft, verdict_list, section_id, source_text,
+                 note_type       = note_type,
+                 entity_name     = entity_name,
+                 iteration_count = 1L,
+                 claude_used     = FALSE,
+                 iteration_log   = iter_log_json,
+                 .queue_path     = .queue_path)
+  invisible("enqueued")
+}
+
 .entity_relative_path <- function(entity_id, note_type) {
   switch(note_type,
     "npc"      = file.path("npcs",      paste0(entity_id, ".md")),
