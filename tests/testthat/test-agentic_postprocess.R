@@ -1,4 +1,5 @@
 library(testthat)
+source(test_path("../../R/postprocess_shared.R"))
 source(test_path("../../R/agentic_postprocess.R"))
 
 # Fixture: minimal protected_entities.csv with a dm_voice row, a pc row, and a

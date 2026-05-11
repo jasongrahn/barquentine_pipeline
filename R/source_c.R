@@ -46,17 +46,37 @@ load_protected_slugs <- function(path = PROTECTED_ENTITIES_PATH) {
   # dropped entirely elsewhere — they should not bypass the frequency filter here.
   if ("exclude_from_spotting" %in% names(df))
     keep <- keep & (is.na(df$exclude_from_spotting) | !df$exclude_from_spotting)
+  # dm_voice rows are DM persona labels, not in-fiction NPCs; they must not
+  # bypass the frequency filter. Mirrors load_agentic_protected_slugs().
+  if ("entity_type" %in% names(df))
+    keep <- keep & (is.na(df$entity_type) | df$entity_type != "dm_voice")
   df$slug[keep]
 }
 
 load_excluded_entity_slugs <- function(path = PROTECTED_ENTITIES_PATH) {
   if (!file.exists(path)) return(character(0))
   df <- read_csv(path, show_col_types = FALSE)
-  needed <- c("slug", "exclude_from_spotting")
-  if (!all(needed %in% names(df))) return(character(0))
-  flag <- df$exclude_from_spotting
-  if (is.character(flag)) flag <- tolower(flag) == "true"
-  df$slug[!is.na(df$slug) & nzchar(df$slug) & !is.na(flag) & flag]
+  if (!"slug" %in% names(df)) return(character(0))
+
+  base_keep <- !is.na(df$slug) & nzchar(df$slug)
+  drop      <- rep(FALSE, nrow(df))
+
+  if ("exclude_from_spotting" %in% names(df)) {
+    flag <- df$exclude_from_spotting
+    if (is.character(flag)) flag <- tolower(flag) == "true"
+    drop <- drop | (!is.na(flag) & flag)
+  }
+
+  # dm_voice / pc / pc_alias / player rows are dropped from the entity-note
+  # pipeline entirely — they are DM personas or player characters, not NPCs.
+  # Mirrors filter_pc_and_player_npcs() + filter_dm_voice_npcs() in the
+  # agentic chain.
+  if ("entity_type" %in% names(df)) {
+    drop <- drop | (!is.na(df$entity_type) &
+                    df$entity_type %in% c("dm_voice", "pc", "pc_alias", "player"))
+  }
+
+  df$slug[base_keep & drop]
 }
 
 load_vtt_registry <- function(registry_path = "config/vtt_registry.csv",
@@ -153,6 +173,51 @@ extract_relevant_sentences <- function(passage, entity_name, window = 2L) {
         normalized)
 }
 
+# Merge entity records whose slugs cluster as near-typo variants under
+# collapse_near_match_slugs(). Only `note_type == "location"` records
+# participate; NPC/faction names cluster too aggressively for an
+# unsupervised merge. Cluster survivors take the longest slug as the
+# canonical entity_id, the longest entity_name as the display name, and
+# the union of source_passages + source_episode_ids.
+.collapse_location_records <- function(records) {
+  loc_idx <- which(vapply(records,
+                          function(r) identical(r$note_type, "location"),
+                          logical(1)))
+  if (length(loc_idx) < 2L) return(records)
+
+  loc_slugs <- vapply(records[loc_idx], `[[`, character(1), "entity_id")
+  reps      <- collapse_near_match_slugs(loc_slugs)
+  if (identical(reps, loc_slugs)) return(records)
+
+  by_rep <- split(seq_along(loc_idx), reps)
+
+  merged_locs <- lapply(by_rep, function(local_idxs) {
+    idxs <- loc_idx[local_idxs]
+    if (length(idxs) == 1L) return(records[[idxs]])
+
+    survivors <- records[idxs]
+    rep_slug  <- reps[local_idxs[1]]
+    names_here <- vapply(survivors, `[[`, character(1), "entity_name")
+    base       <- survivors[[which.max(nchar(names_here))]]
+
+    base$entity_id          <- rep_slug
+    base$source_passages    <- unique(unlist(
+      lapply(survivors, `[[`, "source_passages"), use.names = FALSE))
+    base$source_episode_ids <- unique(unlist(
+      lapply(survivors, `[[`, "source_episode_ids"), use.names = FALSE))
+
+    absorbed <- setdiff(names_here, base$entity_name)
+    if (length(absorbed)) {
+      message(sprintf("  [location collapse] '%s' absorbed: %s",
+                      base$entity_name, paste(absorbed, collapse = ", ")))
+    }
+    base
+  })
+
+  non_loc <- records[-loc_idx]
+  c(non_loc, unname(merged_locs))
+}
+
 aggregate_entity_passages <- function(vtt_file_results, alias_registry,
                                       min_chunks = MIN_ENTITY_CHUNK_COUNT,
                                       exclusion_slugs = character(0),
@@ -176,6 +241,22 @@ aggregate_entity_passages <- function(vtt_file_results, alias_registry,
         slug   <- resolve_alias(name, alias_registry)
         if (is.null(slug)) slug <- make_slug(name)
         if (is.list(slug)) slug <- slug$slug
+
+        # ^unnamed\b filter — post alias-resolution, protected-slug bypass.
+        # The model emits "unnamed adjutant" / "unnamed Astra Elf" etc. as
+        # extractor noise; drop them unless the stripped slug is protected
+        # (mirrors agentic_slug() + filter_low_signal_npcs() gating, so
+        # "unnamed Ted" still maps onto the protected "ted" slug).
+        if (grepl("^unnamed\\b", name, ignore.case = TRUE)) {
+          stripped_slug <- make_slug(sub("^unnamed[ _]+", "", name,
+                                         ignore.case = TRUE))
+          if (stripped_slug %in% protected_slugs) {
+            slug <- stripped_slug
+          } else {
+            message(sprintf("  [unnamed dropped] '%s'", name))
+            next
+          }
+        }
 
         if (slug %in% exclusion_slugs) {
           message(sprintf("  [excluded] dropped: '%s'", name))
@@ -209,6 +290,12 @@ aggregate_entity_passages <- function(vtt_file_results, alias_registry,
     rec$source_episode_ids <- unique(rec$source_episode_ids)
     rec
   })
+
+  # Step 2.5: edit-distance collapse on location slugs only. NPC/faction
+  # names are too typo-fragile for an unsupervised merge ("Cletus" vs
+  # "Cletas" must not silently fold). Locations get the helper from
+  # R/postprocess_shared.R, shared with the agentic chain.
+  records <- .collapse_location_records(records)
 
   records <- Filter(function(rec) {
     if (length(rec$source_passages) >= min_chunks || rec$entity_id %in% protected_slugs) {

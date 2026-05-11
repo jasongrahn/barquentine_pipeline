@@ -7,6 +7,9 @@ suppressPackageStartupMessages({
   library(dplyr); library(stringr); library(readr)
 })
 
+# `collapse_near_match_slugs()` is defined in R/postprocess_shared.R, which
+# _targets.R sources before this file.
+
 # Slug a name the same way for matching against protected_entities.csv.
 # Strips a leading "unnamed " or "unnamed_" qualifier so that
 # "unnamed Lumi" / "Lumi" / "lumi" all map to the same slug.
@@ -234,40 +237,20 @@ collapse_near_match_locations <- function(locs,
 
   if (nrow(locs) < 2L) return(locs)
 
-  slugs <- agentic_slug(locs$name)
-  d <- utils::adist(slugs)
-  diag(d) <- NA_integer_
-
-  parent <- seq_len(nrow(locs))
-  find <- function(i) {
-    while (parent[i] != i) i <- parent[i]
-    i
-  }
-  union_ <- function(i, j) {
-    ri <- find(i); rj <- find(j)
-    if (ri != rj) parent[ri] <<- rj
-  }
-
-  for (i in seq_len(nrow(locs) - 1L)) {
-    for (j in (i + 1L):nrow(locs)) {
-      shorter <- min(nchar(slugs[i]), nchar(slugs[j]))
-      if (shorter < min_length) next
-      if (d[i, j] / shorter <= edit_ratio) union_(i, j)
-    }
-  }
-
-  cluster <- vapply(seq_len(nrow(locs)), find, integer(1))
+  reps <- collapse_near_match_slugs(agentic_slug(locs$name),
+                                    ratio   = edit_ratio,
+                                    min_len = min_length)
 
   locs |>
-    mutate(.cluster = cluster) |>
-    group_by(.cluster) |>
+    mutate(.rep = reps) |>
+    group_by(.rep) |>
     summarize(
       name        = first(name[order(-nchar(name))]),
       description = first(description[order(-nchar(as.character(description)))]),
       line        = suppressWarnings(min(as.integer(line), na.rm = TRUE)),
       .groups = "drop"
     ) |>
-    select(-.cluster)
+    select(-.rep)
 }
 
 # Convenience: full postprocessing pipeline. Takes the merged extraction
