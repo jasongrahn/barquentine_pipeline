@@ -65,3 +65,6 @@ config/*.bak
 
 # Agentic-pipeline user-upload sandbox (superseded by agents/wiki_skills/)
 agents/mnt/
+
+# tar_make output logs
+/logs/
