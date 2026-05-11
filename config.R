@@ -86,7 +86,7 @@ CURRENT_SESSION <- "s02e34"          # ← update this each session (s01e01 zero
 
 # Set TRUE to write to /tmp/barquentine-preview/ instead of vault
 # Always do a dry run first when testing new extraction prompts
-DRY_RUN         <- FALSE            # ← flip to FALSE when ready for live run
+DRY_RUN         <- TRUE             # ← flip to FALSE when ready for live run
 DRY_RUN_PATH    <- "/tmp/barquentine-preview"
 
 # -----------------------------------------------------------------------------
@@ -116,7 +116,7 @@ ACTIVE_EPISODES <- NULL
 # redirects its output to vault/dm_prep/<id>.md so the VTT recap remains
 # canonical at vault/sessions/<id>.md.
 # Episodes NOT in this vector run the existing critic-loop path unchanged.
-AGENTIC_VTT_SESSION_IDS  <- character(0)
+AGENTIC_VTT_SESSION_IDS  <- c("s02e34")
 
 AGENTIC_CHUNK_SIZE_LINES <- 50L                                # dialogue lines per chunk (~800-1000 words)
 AGENTIC_EVENT_KEEP_N     <- 18L                                # events kept after prune_events scoring
