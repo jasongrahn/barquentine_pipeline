@@ -67,13 +67,17 @@ load_excluded_entity_slugs <- function(path = PROTECTED_ENTITIES_PATH) {
     drop <- drop | (!is.na(flag) & flag)
   }
 
-  # dm_voice / pc / pc_alias / player rows are dropped from the entity-note
-  # pipeline entirely — they are DM personas or player characters, not NPCs.
-  # Mirrors filter_pc_and_player_npcs() + filter_dm_voice_npcs() in the
-  # agentic chain.
+  # dm_voice + player rows are dropped from the entity-note pipeline
+  # entirely (DM persona and real-world players never get character wikis).
+  # PCs and pc_aliases are NOT dropped here — they're main characters and
+  # need their own wiki pages. The agentic chain's
+  # filter_pc_and_player_npcs() also drops pc/pc_alias, but only from the
+  # *NPC list inside a session recap*; for the entity chain (per-character
+  # wiki generation) PCs must stay. captain + the_captain produce separate
+  # records that the Phase 4.5 Merge UI collapses at review time.
   if ("entity_type" %in% names(df)) {
     drop <- drop | (!is.na(df$entity_type) &
-                    df$entity_type %in% c("dm_voice", "pc", "pc_alias", "player"))
+                    df$entity_type %in% c("dm_voice", "player"))
   }
 
   df$slug[base_keep & drop]

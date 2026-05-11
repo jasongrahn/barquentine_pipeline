@@ -47,14 +47,14 @@ test_that("load_protected_slugs still honors exclude_from_spotting alongside dm_
 
 # ---- load_excluded_entity_slugs (pc / pc_alias / dm_voice / player) ---------
 
-test_that("load_excluded_entity_slugs drops dm_voice + pc_alias + player rows", {
+test_that("load_excluded_entity_slugs drops dm_voice + player rows; keeps pc + pc_alias", {
   pf <- write_protected_fixture(protected_rows_full())
   out <- load_excluded_entity_slugs(pf)
-  expect_true("the_admiral"  %in% out)   # dm_voice
-  expect_true("captain"      %in% out)   # pc_alias
-  expect_true("the_captain"  %in% out)   # pc_alias
-  expect_true("basil"        %in% out)   # pc
+  expect_true("the_admiral"  %in% out)   # dm_voice -- DM persona, no wiki
   expect_true("john"         %in% out)   # player (also exclude_from_spotting TRUE)
+  expect_false("captain"     %in% out)   # pc_alias -- needs wiki (merges via UI)
+  expect_false("the_captain" %in% out)   # pc_alias -- needs wiki (merges via UI)
+  expect_false("basil"       %in% out)   # pc -- protagonist, needs wiki
   expect_false("ted"         %in% out)   # plain npc, not excluded
 })
 
@@ -230,11 +230,17 @@ test_that("'unnamed Ted' keeps in both pipelines via protected-slug bypass", {
   expect_equal(agentic_d, "keep")
 })
 
-test_that("'Captain' (pc_alias) drops in both pipelines", {
+test_that("'Captain' (pc_alias) DIVERGES: agentic drops from NPC list; entity chain keeps for wiki", {
+  # Intentional divergence: PCs and pc_aliases are NOT NPCs in a session
+  # recap (agentic chain drops them from the NPC list), but they ARE
+  # protagonists that need their own character wiki pages. The entity
+  # chain must keep them; the Phase 4.5 Merge UI collapses captain +
+  # the_captain into Basil's wiki at review time.
   entity_d  <- entity_chain_decision("Captain",
-                                     exclusions = "captain")
+                                     protected  = "captain",
+                                     exclusions = character(0))
   agentic_d <- agentic_chain_decision("Captain",
                                       pc_drop_slugs = "captain")
-  expect_equal(entity_d,  "drop")
+  expect_equal(entity_d,  "keep")
   expect_equal(agentic_d, "drop")
 })
