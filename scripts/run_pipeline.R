@@ -150,6 +150,17 @@ isTRUE_vec <- function(x) {
 }
 
 run_pipeline <- function(max_retries = 3) {
+  # Ensure config globals (CURRENT_SESSION, PROCESS_ONE_SESSION, VAULT_PATH, etc.)
+  # are present in the calling env. _targets.R sources config.R during tar_make(),
+  # but the pre-tar_make assertions below reference these globals directly, so a
+  # stale R session that predates the relevant config additions would otherwise
+  # blow up before the pipeline ever starts.
+  if (!exists("PROCESS_ONE_SESSION", envir = globalenv()) ||
+      !exists("CURRENT_SESSION", envir = globalenv()) ||
+      !exists("VAULT_PATH", envir = globalenv())) {
+    sys.source("config.R", envir = globalenv())
+  }
+
   # Auto-detect CURRENT_SESSION when not explicitly set in config.R.
   # Any non-NULL value in config.R is used as-is (explicit override).
   if (is.null(CURRENT_SESSION)) {

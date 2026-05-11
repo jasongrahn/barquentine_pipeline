@@ -178,7 +178,7 @@ aggregate_entity_passages <- function(vtt_file_results, alias_registry,
         if (is.list(slug)) slug <- slug$slug
 
         if (slug %in% exclusion_slugs) {
-          message(sprintf("  [protected] dropped: '%s'", name))
+          message(sprintf("  [excluded] dropped: '%s'", name))
           next
         }
 

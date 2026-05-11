@@ -39,9 +39,9 @@ The pipeline flows in five phases defined in `_targets.R`:
 
 1. **Source fetch** (`R/source_b.R`) — Pulls the Google Doc (ID in `config.R`), parses tabs into named episode sections. Sections under 100 words are skipped; sections over `CRITIC_CONTEXT_WORD_LIMIT` (3000 words) are routed to Claude instead of local Ollama.
 
-2. **Generate** (`R/extract.R` + `R/ollama.R`) — qwen3.5:9b drafts structured markdown from source text. Uses `num_predict = 800L` to accommodate thinking-mode output without timeouts.
+2. **Generate** (`R/extract.R` + `R/ollama.R`) — `OLLAMA_MODEL` (currently `gemma4:latest`) drafts structured markdown from source text. Uses `num_predict = 800L` to accommodate thinking-mode output without timeouts.
 
-3. **Critic** (`R/critic.R`) — llama3.1:8b fact-checks the draft against the source, returning a JSON verdict `{verdict, confidence, issues, quotes}` enforced via Ollama's `format` schema parameter. Router (`R/router.R`) then directs:
+3. **Critic** (`R/critic.R`) — `OLLAMA_CRITIC_MODEL` (currently `llama3.1:8b`) fact-checks the draft against the source, returning a JSON verdict `{verdict, confidence, issues, quotes}` enforced via Ollama's `format` schema parameter. Router (`R/router.R`) then directs:
    - `approved` + confidence ≥ 0.85 → auto-write to vault
    - `approved` + confidence < 0.85 → review queue
    - `flagged` + confidence < 0.60 → Claude escalation tiebreak
@@ -55,11 +55,11 @@ After review, `R/writer.R` writes markdown to the vault and `R/git_commit.R` com
 
 ## Model roles
 
-- **qwen3.5:9b** — generator only (session note drafting)
-- **llama3.1:8b** — critic only (fact-checking, JSON structured output)
-- **claude-sonnet-4-6** — escalation tiebreak only (high word count or low-confidence flagged)
+- **`OLLAMA_MODEL`** (currently `gemma4:latest`) — generator only (session and entity note drafting)
+- **`OLLAMA_CRITIC_MODEL`** (currently `llama3.1:8b`) — critic only (fact-checking, JSON structured output)
+- **claude-sonnet-4-6** — escalation only (cap-hit revision after `DRAFT_MAX_ITERATIONS`, high-word-count routing, or low-confidence flagged tiebreak)
 
-Never swap generator and critic models without explicit instruction.
+Always read `config.R` for current model bindings rather than quoting a hardcoded name. Never swap generator and critic models without explicit instruction.
 
 ## Key config (`config.R`)
 
