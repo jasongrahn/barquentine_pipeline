@@ -10,6 +10,7 @@ setwd(PROJECT_ROOT)
 source("config.R")
 source("R/queue.R")
 source("R/writer.R")
+source("R/agentic_writer.R")
 source("R/review.R")
 source("R/training.R")
 source("R/regen.R")
@@ -298,11 +299,12 @@ server <- function(input, output, session) {
     draft <- null_coalesce(row$draft, "")
     resolve_item(row$section_id, "accepted", .queue_path = QUEUE_PATH_ABS)
     if (nzchar(draft)) {
+      rel_path  <- session_note_relative_path(row$section_id)
       write_note(content = draft,
-                 relative_path = file.path("sessions", paste0(row$section_id, ".md")),
+                 relative_path = rel_path,
                  .vault_path = VAULT_PATH_ABS,
                  dry_run = DRY_RUN, overwrite = TRUE)
-      note_path <- file.path("sessions", row$section_id)
+      note_path <- sub("\\.md$", "", rel_path)
       append_review_entry(
         format_review_entry(note_path, "auto-approved by pipeline", verdict = "accepted"),
         vault_path = VAULT_PATH_ABS, dry_run = DRY_RUN
@@ -331,11 +333,12 @@ server <- function(input, output, session) {
     resolve_item(row$section_id, "accepted_with_edit", edited_draft = edited,
                  .queue_path = QUEUE_PATH_ABS)
     if (nzchar(trimws(edited))) {
+      rel_path  <- session_note_relative_path(row$section_id)
       write_note(content = edited,
-                 relative_path = file.path("sessions", paste0(row$section_id, ".md")),
+                 relative_path = rel_path,
                  .vault_path = VAULT_PATH_ABS,
                  dry_run = DRY_RUN, overwrite = TRUE)
-      note_path <- file.path("sessions", row$section_id)
+      note_path <- sub("\\.md$", "", rel_path)
       append_review_entry(
         format_review_entry(note_path, "accepted with edits", verdict = "accepted_with_edit"),
         vault_path = VAULT_PATH_ABS, dry_run = DRY_RUN

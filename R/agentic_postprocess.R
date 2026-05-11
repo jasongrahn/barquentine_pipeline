@@ -109,7 +109,12 @@ prune_events <- function(events, npcs, locations, n = 18) {
 # Drop NPC rows that are clearly DM-voice noise: descriptions like "The Admiral",
 # "DM, appears to be directing the scene", "A name", or "A person". These are
 # placeholders the extractor returns when the chunk only mentioned a label.
-filter_low_signal_npcs <- function(npcs) {
+#
+# Rows whose slug is in `protected_slugs` bypass the filter, so a known NPC
+# (e.g. Ted, Cletus) with a thin description is not silently dropped. Protected
+# rows are still subject to filter_pc_and_player_npcs() — PCs must not appear
+# in NPC lists regardless of how the user marked them.
+filter_low_signal_npcs <- function(npcs, protected_slugs = character(0)) {
   if (is.null(npcs) || nrow(npcs) == 0) return(npcs)
   noise_patterns <- c(
     "^The Admiral$",
@@ -121,7 +126,40 @@ filter_low_signal_npcs <- function(npcs) {
   bad <- Reduce(`|`, lapply(noise_patterns, function(p)
     grepl(p, npcs$description %||% "", ignore.case = FALSE)))
   if (is.null(bad)) return(npcs)
+
+  if (length(protected_slugs) > 0L) {
+    protected_hit <- agentic_slug(npcs$name) %in% protected_slugs
+    bad <- bad & !protected_hit
+  }
+
   npcs[!bad, , drop = FALSE]
+}
+
+# Read protected_entities.csv + entity_aliases.csv and produce the union of
+# slugs that should bypass the low-signal filter. PC and player entities are
+# included even though they are dropped earlier by filter_pc_and_player_npcs;
+# the union is a superset, not a routing decision.
+load_agentic_protected_slugs <- function(
+  protected_path = "config/protected_entities.csv",
+  aliases_path   = "config/entity_aliases.csv"
+) {
+  base <- character(0)
+  if (file.exists(protected_path)) {
+    prot <- read_csv(protected_path, show_col_types = FALSE)
+    if ("slug" %in% names(prot)) {
+      keep <- !is.na(prot$slug) & nzchar(prot$slug)
+      base <- prot$slug[keep]
+    }
+  }
+  if (file.exists(aliases_path)) {
+    aliases <- read_csv(aliases_path, show_col_types = FALSE)
+    if (all(c("alias", "canonical_slug") %in% names(aliases))) {
+      hits <- !is.na(aliases$canonical_slug) & aliases$canonical_slug %in% base &
+              !is.na(aliases$alias) & nzchar(aliases$alias)
+      base <- unique(c(base, agentic_slug(aliases$alias[hits])))
+    }
+  }
+  unique(base)
 }
 
 # Heuristic location dedup: collapse "the X" vs "X" vs "X-1" near-matches by
@@ -147,11 +185,14 @@ collapse_near_match_locations <- function(locs) {
 # shape but filtered, deduped, and pruned.
 postprocess_extracted <- function(extracted,
                                   protected_path = "config/protected_entities.csv",
+                                  aliases_path   = "config/entity_aliases.csv",
                                   event_keep_n   = 18) {
+  protected_slugs <- load_agentic_protected_slugs(protected_path, aliases_path)
+
   npcs <- extracted$npcs |>
     filter_pc_and_player_npcs(protected_path = protected_path) |>
     dedup_by_slug("name") |>
-    filter_low_signal_npcs()
+    filter_low_signal_npcs(protected_slugs = protected_slugs)
 
   locations <- extracted$locations |>
     dedup_by_slug("name") |>

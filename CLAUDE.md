@@ -31,7 +31,19 @@ testthat::test_file("tests/testthat/test-critic.R")
 shiny::runApp("shiny", port = 7474)
 ```
 
-Before a live run, set `DRY_RUN <- FALSE` in `config.R`. Update `CURRENT_SESSION` to the episode being processed (e.g., `"S2e34"`).
+Before a live run, set `DRY_RUN <- FALSE` in `config.R`. Update `CURRENT_SESSION` to the episode being processed (e.g., `"s02e34"`).
+
+### Opting an episode into the agentic VTT flow
+
+The new agentic flow (per-chunk schema-enforced extraction → R-assembled markdown → one Synopsis LLM call) ships behind a per-session opt-in. To run an episode through it:
+
+1. Add the episode id to `AGENTIC_VTT_SESSION_IDS` in `config.R`, e.g. `AGENTIC_VTT_SESSION_IDS <- c("s02e34")`. Default is `character(0)`.
+2. Run `targets::tar_make()` as usual. The agentic chain produces a queue row with `section_id = "<sid>__agentic"`; the existing doc-prep flow keeps its row at `section_id = "<sid>"`.
+3. On reviewer accept, the writer routes:
+   - `<sid>__agentic` → `vault/sessions/<sid>.md` (canonical VTT recap)
+   - `<sid>` for opt-in episodes → `vault/dm_prep/<sid>.md` (DM prep sidecar)
+   - `<sid>` for non-opt-in episodes → `vault/sessions/<sid>.md` (existing behavior, unchanged)
+4. Keep the opt-in vector small until 3 sessions have shipped with approved output; do not flip agentic to default before then.
 
 ## Architecture
 

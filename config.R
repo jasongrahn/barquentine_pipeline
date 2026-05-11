@@ -106,3 +106,19 @@ REGEN_LOCK_FILE <- "review_queue/.regen.lock"  # sentinel touched by bg job; rel
 # VTT episodes to process in Phase 3. NULL = all confirmed episodes.
 # Set to a character vector to limit the run, e.g. c("S2e34") for one episode.
 ACTIVE_EPISODES <- NULL
+
+# -----------------------------------------------------------------------------
+# Agentic VTT extraction (Phase 0 — session-notes-only)
+# -----------------------------------------------------------------------------
+# Per-session opt-in. Episodes in this vector run the new agentic extraction
+# flow: per-chunk schema-enforced extraction + R-assembled markdown + a single
+# LLM Synopsis call. For these episodes the Google-Doc prep flow (source_b)
+# redirects its output to vault/dm_prep/<id>.md so the VTT recap remains
+# canonical at vault/sessions/<id>.md.
+# Episodes NOT in this vector run the existing critic-loop path unchanged.
+AGENTIC_VTT_SESSION_IDS  <- character(0)
+
+AGENTIC_CHUNK_SIZE_LINES <- 50L                                # dialogue lines per chunk (~800-1000 words)
+AGENTIC_EVENT_KEEP_N     <- 18L                                # events kept after prune_events scoring
+AGENTIC_DIALOGUE_KEEP_N  <- 8L                                 # significant-dialogue cap
+AGENTIC_OUTPUT_DIR       <- "review_queue/agentic_intermediates"

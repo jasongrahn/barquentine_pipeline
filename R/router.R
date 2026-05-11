@@ -3,6 +3,10 @@ library(jsonlite)
 route_verdict <- function(verdict, confidence) {
   if (verdict == "skipped")     return("skip")
   if (verdict == "parse_error") return("enqueue")
+  # Agentic VTT extraction flow (docs/phase_agentic_extraction_integration.md,
+  # Q3). Pre-queue verification is the mechanical line-citation check in
+  # R/agentic_fact_check.R; the critic loop is not used. Always enqueue.
+  if (verdict == "agentic_no_critic") return("enqueue")
   if (verdict == "rejected" && !is.na(confidence) && confidence >= CRITIC_REJECT_THRESHOLD)
     return("critic_reject")
   if (verdict == "rejected")    return("enqueue")

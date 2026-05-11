@@ -26,6 +26,11 @@ source("R/writer.R")
 source("R/merge.R")
 source("R/review.R")
 source("R/git_commit.R")
+source("R/agentic_postprocess.R")
+source("R/agentic_extract.R")
+source("R/agentic_fact_check.R")
+source("R/agentic_writer.R")
+source("R/agentic_dispatch.R")
 
 list(
 
@@ -264,6 +269,230 @@ list(
     entity_queue_consolidated,
     {
       entity_dispatched
+      consolidate_queue()
+    }
+  ),
+
+  # --- Phase 0: Agentic VTT → session-note chain -----------------------------
+  # Per-session opt-in. Episodes in AGENTIC_VTT_SESSION_IDS run the new
+  # agentic extraction flow (per-chunk schema-enforced extraction +
+  # R-frontloaded assembly + one Synopsis LLM call). For non-opt-in episodes
+  # every target below short-circuits to an empty list / character(0) and
+  # the existing doc-prep + entity flows above run unchanged.
+
+  # Opt-in episodes that overlap CURRENT_SESSION's VTT registry rows.
+  tar_target(
+    agentic_session_ids,
+    intersect(vtt_registry_for_current$episode_id, AGENTIC_VTT_SESSION_IDS)
+  ),
+
+  # VTT file paths for the opt-in episodes (same row order as
+  # agentic_session_ids).
+  tar_target(
+    agentic_vtt_paths,
+    if (length(agentic_session_ids) == 0L) character(0)
+    else file.path(NAS_MOUNT,
+                   vtt_registry_for_current$filename[
+                     match(agentic_session_ids, vtt_registry_for_current$episode_id)
+                   ])
+  ),
+
+  # Preprocess each opt-in VTT once. format = "rds" so the cached
+  # preprocessing survives chunk-level invalidations.
+  tar_target(
+    agentic_preprocessed,
+    if (length(agentic_vtt_paths) == 0L) list()
+    else lapply(seq_along(agentic_vtt_paths), function(i) {
+      list(
+        session_id = agentic_session_ids[i],
+        vtt        = preprocess_vtt_for_extraction(
+                        agentic_vtt_paths[i],
+                        chunk_size = AGENTIC_CHUNK_SIZE_LINES)
+      )
+    }),
+    format = "rds"
+  ),
+
+  # Per-chunk extraction inputs, flattened across opt-in sessions. Sentinel
+  # list(NULL) when empty so pattern = map() downstream has at least one
+  # branch (mirrors the entity_passages -> entity_refined pattern above).
+  tar_target(
+    agentic_chunk_inputs,
+    {
+      if (length(agentic_preprocessed) == 0L) return(list(NULL))
+      out <- list()
+      for (rec in agentic_preprocessed) {
+        chunks <- rec$vtt$chunks
+        for (i in seq_len(nrow(chunks))) {
+          out[[length(out) + 1L]] <- list(
+            session_id    = rec$session_id,
+            chunk_id      = i,
+            chunk_row     = chunks[i, ],
+            recap_context = rec$vtt$recap_context
+          )
+        }
+      }
+      if (length(out) == 0L) list(NULL) else out
+    },
+    iteration = "list"
+  ),
+
+  # One Ollama extraction per chunk; per-chunk failure invalidates only its
+  # branch, not the whole session run.
+  tar_target(
+    agentic_chunk_extractions,
+    {
+      inp <- agentic_chunk_inputs
+      if (is.null(inp)) return(NULL)
+      list(
+        session_id = inp$session_id,
+        chunk_id   = inp$chunk_id,
+        extraction = extract_chunk(
+          chunk_row     = inp$chunk_row,
+          recap_context = inp$recap_context,
+          chunk_id      = inp$chunk_id,
+          model         = OLLAMA_MODEL,
+          base_url      = OLLAMA_BASE_URL
+        )
+      )
+    },
+    pattern   = map(agentic_chunk_inputs),
+    iteration = "list",
+    format    = "rds"
+  ),
+
+  # Merge per-chunk extractions back together, grouped by session_id.
+  tar_target(
+    agentic_merged,
+    {
+      if (length(agentic_preprocessed) == 0L) return(list())
+      results <- Filter(Negate(is.null), agentic_chunk_extractions)
+      if (length(results) == 0L) return(list())
+      sids <- vapply(results, function(r) r$session_id %||% NA_character_, character(1))
+      lapply(unique(sids), function(sid) {
+        per <- lapply(results[sids == sid], function(r) r$extraction)
+        list(
+          session_id = sid,
+          merged     = merge_chunk_extractions(
+                          per, dialogue_keep_n = AGENTIC_DIALOGUE_KEEP_N)
+        )
+      })
+    }
+  ),
+
+  # Apply NPC/location filters; preserves protected entities via Step 0.6.
+  tar_target(
+    agentic_postprocessed,
+    if (length(agentic_merged) == 0L) list()
+    else lapply(agentic_merged, function(rec) {
+      list(
+        session_id = rec$session_id,
+        merged     = postprocess_extracted(
+                        rec$merged,
+                        protected_path = PROTECTED_ENTITIES_PATH,
+                        aliases_path   = ENTITY_ALIASES_PATH,
+                        event_keep_n   = AGENTIC_EVENT_KEEP_N)
+      )
+    })
+  ),
+
+  # Single LLM call per session: the Synopsis paragraph only. Everything else
+  # in the assembled markdown is R-frontloaded from agentic_postprocessed.
+  tar_target(
+    agentic_synthesis,
+    if (length(agentic_postprocessed) == 0L) list()
+    else lapply(seq_along(agentic_postprocessed), function(i) {
+      rec     <- agentic_postprocessed[[i]]
+      pre_rec <- agentic_preprocessed[[match(rec$session_id,
+                                             vapply(agentic_preprocessed,
+                                                    function(x) x$session_id,
+                                                    character(1)))]]
+      list(
+        session_id = rec$session_id,
+        synthesis  = synthesize_session_recap(
+                        merged   = rec$merged,
+                        vtt_meta = pre_rec$vtt,
+                        model    = OLLAMA_MODEL,
+                        base_url = OLLAMA_BASE_URL)
+      )
+    })
+  ),
+
+  # Assembled markdown (R does the heavy lifting; LLM only owned Synopsis).
+  tar_target(
+    agentic_markdown,
+    if (length(agentic_postprocessed) == 0L) list()
+    else lapply(seq_along(agentic_postprocessed), function(i) {
+      rec     <- agentic_postprocessed[[i]]
+      pre_rec <- agentic_preprocessed[[match(rec$session_id,
+                                             vapply(agentic_preprocessed,
+                                                    function(x) x$session_id,
+                                                    character(1)))]]
+      synth   <- agentic_synthesis[[match(rec$session_id,
+                                          vapply(agentic_synthesis,
+                                                 function(x) x$session_id,
+                                                 character(1)))]]$synthesis
+      list(
+        session_id = rec$session_id,
+        markdown   = assemble_session_markdown(
+                        synthesis = synth,
+                        merged    = rec$merged,
+                        vtt_meta  = pre_rec$vtt)
+      )
+    })
+  ),
+
+  # Mechanical line-citation verification. Cheap R, no LLM. The score is
+  # surfaced as the queue row's confidence; it does NOT block dispatch.
+  tar_target(
+    agentic_fact_check,
+    if (length(agentic_postprocessed) == 0L) list()
+    else lapply(agentic_postprocessed, function(rec) {
+      pre_rec <- agentic_preprocessed[[match(rec$session_id,
+                                             vapply(agentic_preprocessed,
+                                                    function(x) x$session_id,
+                                                    character(1)))]]
+      list(
+        session_id  = rec$session_id,
+        fact_check  = verify_line_citations(rec$merged, pre_rec$vtt)
+      )
+    })
+  ),
+
+  # Enqueue one queue row per opt-in session, with section_id <sid>__agentic.
+  # Coexists with any doc-prep row for the same episode (which writer-layer
+  # routes to vault/dm_prep/<sid>.md when sid %in% AGENTIC_VTT_SESSION_IDS).
+  tar_target(
+    agentic_dispatched,
+    {
+      if (length(agentic_markdown) == 0L) return(invisible(NULL))
+      lapply(seq_along(agentic_markdown), function(i) {
+        rec <- agentic_markdown[[i]]
+        fc  <- agentic_fact_check[[match(rec$session_id,
+                                         vapply(agentic_fact_check,
+                                                function(x) x$session_id,
+                                                character(1)))]]$fact_check
+        pre <- agentic_preprocessed[[match(rec$session_id,
+                                           vapply(agentic_preprocessed,
+                                                  function(x) x$session_id,
+                                                  character(1)))]]
+        source_text <- paste(pre$vtt$chunks$text, collapse = "\n\n")
+        dispatch_agentic_session(
+          markdown    = rec$markdown,
+          session_id  = rec$session_id,
+          source_text = source_text,
+          fact_check  = fc
+        )
+      })
+    }
+  ),
+
+  # Re-consolidate after agentic staging files exist so they roll into
+  # queue.csv alongside the doc-prep and entity rows.
+  tar_target(
+    agentic_queue_consolidated,
+    {
+      agentic_dispatched
       consolidate_queue()
     }
   )
