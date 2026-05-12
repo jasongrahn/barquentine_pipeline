@@ -29,6 +29,9 @@ ep$note_type  # correct
 ### Default arguments resolve at call time in the enclosing environment
 `read_queue(.queue_path = REVIEW_QUEUE_PATH)` looks up `REVIEW_QUEUE_PATH` in the function's enclosing environment (where `queue.R` was sourced), not at the call site. This is usually fine but bites you in Shiny.
 
+### targets skips downstream when an upstream returns same-shape value
+A single-target node whose body is `lapply(seq_along(x), ...)` returning a constant per element (e.g., `dispatch_*()` returning `invisible("enqueued")`) produces the same content hash whenever the input length is stable. Downstream targets that depend only on this node will be SKIPPED on subsequent runs even though the upstream "ran" — targets compares values, not invocations. Symptom on `agentic_dispatched` → `agentic_queue_consolidated`: staging files were written but never rolled into `queue.csv` because the consolidator was skipped. Fix: either return a content-varying value (Sys.time, count, written paths) or attach `cue = tar_cue(mode = "always")` to the downstream side-effect target.
+
 ---
 
 ## Shiny
