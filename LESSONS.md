@@ -83,6 +83,19 @@ if (nchar(trimws(existing_text)) == 0L) return(new_content)
 ### Frequency filter ordering: filter on raw chunk text, extract sentences after
 When building entity passage lists, apply the chunk-count frequency filter (`length(unique(source_passages)) >= min_chunks`) on the full raw chunk text, then run sentence-window extraction on survivors only. Reversing the order (extract first, then count) produces shorter strings that are more likely to collide as duplicates, corrupting the frequency count and dropping entities that should survive.
 
+### Two-chain `pc`/`pc_alias` divergence
+The agentic chain's `filter_pc_and_player_npcs()` (`R/agentic_postprocess.R`) drops `pc` and `pc_alias` rows from **the NPC list inside a session recap** — PCs are not NPCs in a recap. The entity chain (`R/source_c.R::load_excluded_entity_slugs`) does **not** drop them — it generates per-character wiki pages, and PCs are the protagonists.
+
+**Do not mirror filters blindly between the two chains.** Commit `47a176f` ported the agentic exclusion list verbatim into the entity chain, which over-excluded — captain / lumi / room never got wiki pages. Commit `a2ad4aa` fixed it: the entity chain drops only `dm_voice` and `player`; `pc` and `pc_alias` flow through, and the Phase 4.5 Merge UI collapses captain + the_captain → basil at review time.
+
+When porting a filter across chains, ask: "is this a *presentation* rule (recap formatting) or an *existence* rule (does this entity get a wiki)?" They diverge.
+
+### Entity-chain `^unnamed ` filter: strip-then-check, not slug-then-check
+`R/source_c.R::aggregate_entity_passages()` drops names matching `^unnamed\b` unless the *stripped* slug is in `protected_slugs`. This mirrors `agentic_slug()`'s `^unnamed[ _]+` strip in `R/agentic_postprocess.R`. Without the strip, "unnamed Ted" would map to slug `unnamed_ted` and fail the protected-slug check; with the strip, it maps to `ted` and survives the bypass.
+
+### Edit-distance slug collapse is location-only
+`R/postprocess_shared.R::collapse_near_match_slugs()` uses `utils::adist()` + union-find to merge near-typo slugs. The entity chain (and the agentic chain's `collapse_near_match_locations`) apply it **only to `note_type == "location"` records**. NPCs and factions have personal names where small edit distances are too noisy ("Cletus" vs "Cletas" must not auto-merge without reviewer judgment). Locations are typo-tolerant in practice.
+
 ### Transcription artifacts in source text
 Source text comes from automated transcripts and will contain garbled, split, or misheard words. The generator prompt must instruct the model to write `[unclear]` rather than guess — otherwise it invents plausible-sounding but fabricated content, violating the no-fabrication rule. Reviewers in the Shiny UI should treat `[unclear]` markers as expected, not as model failures.
 

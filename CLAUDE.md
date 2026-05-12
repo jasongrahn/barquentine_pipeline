@@ -27,8 +27,11 @@ testthat::test_dir("tests/testthat/")
 # Run a single test file
 testthat::test_file("tests/testthat/test-critic.R")
 
-# Launch the Shiny review UI
+# Launch the session-note review UI (Path 1 / Path 3 agentic session rows)
 shiny::runApp("shiny", port = 7474)
+
+# Launch the entity-note review UI (Path 2 NPC / location / faction rows)
+shiny::runApp("shiny/review_queue", port = 7475)
 ```
 
 Before a live run, set `DRY_RUN <- FALSE` in `config.R`. Update `CURRENT_SESSION` to the episode being processed (e.g., `"s02e34"`).
@@ -47,21 +50,69 @@ The new agentic flow (per-chunk schema-enforced extraction → R-assembled markd
 
 ## Architecture
 
-The pipeline flows in five phases defined in `_targets.R`:
+The pipeline has **three parallel input/output paths**, all dispatched from `_targets.R`:
 
-1. **Source fetch** (`R/source_b.R`) — Pulls the Google Doc (ID in `config.R`), parses tabs into named episode sections. Sections under 100 words are skipped; sections over `CRITIC_CONTEXT_WORD_LIMIT` (3000 words) are routed to Claude instead of local Ollama.
+**Path 1 — Google Doc prep flow** (`R/source_b.R`). Pulls DM's pre-game prep tabs.
+For non-agentic episodes, writes the per-session note to `vault/sessions/<id>.md`.
+For episodes in `AGENTIC_VTT_SESSION_IDS`, writer redirects this output to
+`vault/dm_prep/<id>.md` as a sidecar (preserves DM intent without polluting the
+canonical VTT recap).
 
-2. **Generate** (`R/extract.R` + `R/ollama.R`) — `OLLAMA_MODEL` (currently `gemma4:latest`) drafts structured markdown from source text. Uses `num_predict = 800L` to accommodate thinking-mode output without timeouts.
+**Path 2 — Entity-spotting flow** (`R/source_c.R::process_vtt_file` →
+`aggregate_entity_passages` → `R/extract.R::draft_with_refinement`). Spots names
+in the VTT, accumulates passages per slug, then runs the recursive generator-critic
+loop to draft per-entity wiki pages (`vault/npcs/<slug>.md`,
+`vault/locations/<slug>.md`, `vault/factions/<slug>.md`).
 
-3. **Critic** (`R/critic.R`) — `OLLAMA_CRITIC_MODEL` (currently `llama3.1:8b`) fact-checks the draft against the source, returning a JSON verdict `{verdict, confidence, issues, quotes}` enforced via Ollama's `format` schema parameter. Router (`R/router.R`) then directs:
-   - `approved` + confidence ≥ 0.85 → auto-write to vault
-   - `approved` + confidence < 0.85 → review queue
-   - `flagged` + confidence < 0.60 → Claude escalation tiebreak
+**Path 3 — Agentic session flow** (`R/agentic_extract.R` + `R/agentic_postprocess.R`
++ `R/agentic_writer.R` + `R/agentic_dispatch.R`). Per-chunk schema-enforced
+extraction with line citations → R-frontloaded markdown assembly with one Synopsis
+LLM call → mechanical line-citation fact-check (no critic loop). Writes the
+canonical VTT recap to `vault/sessions/<id>.md` for opt-in episodes. Phase 0
+shipped on `feature/recursive-critic-loop`; rollout is per-session opt-in until
+3 sessions have been approved.
+
+Per-stage internals (paths 1 and 2 only — path 3 bypasses generator + critic):
+
+1. **Source fetch** — Sections under 100 words are skipped; sections over
+   `CRITIC_CONTEXT_WORD_LIMIT` (800 words) are routed to Claude instead of local Ollama.
+
+2. **Generate** (`R/extract.R` + `R/ollama.R`) — `OLLAMA_MODEL` (currently `gemma4:latest`)
+   drafts structured markdown. Entity notes pass `think = FALSE` and `num_predict = 800L`.
+
+3. **Critic** (`R/critic.R`) — `OLLAMA_CRITIC_MODEL` (currently `llama3.1:8b`)
+   fact-checks the draft against the source, returning a JSON verdict
+   `{verdict, confidence, issues, quotes}` enforced via Ollama's `format` schema
+   parameter. Router (`R/router.R`) then directs:
+   - `approved` + confidence ≥ `CRITIC_AUTO_APPROVE_THRESHOLD` → auto-write to vault
+     (currently `Inf`, so auto-approve is disabled; all notes go to review queue)
+   - `approved` + confidence < threshold → review queue
+   - `flagged` + confidence < `CRITIC_ESCALATE_THRESHOLD` (0.60) → Claude tiebreak
    - `flagged`/`rejected` → review queue
+   - `agentic_no_critic` (path 3 only) → always review queue, no auto-approve
 
-4. **Review queue + Shiny UI** (`R/queue.R`, `shiny/app.R`) — Pending items land in `review_queue/queue.csv`. The Shiny app (port 7474) shows source (read-only) and draft (editable textarea) side-by-side; critic issues with inline supporting quotes appear below. "Accept as Written" uses the original draft; "Accept with Edits" uses the edited textarea and requires actual changes (warns if unchanged). Entity notes are checked against `config/entity_exclusions.csv` (DM narrator role tags to drop) before passage aggregation; known PCs/key NPCs in `config/protected_entities.csv` bypass the chunk-frequency filter. The alias registry is seeded from `config/entity_aliases.csv` (unambiguous name variants → canonical slug) before scanning vault YAML; vault YAML takes precedence on collision.
+4. **Review queue + Shiny UIs** — Pending items land in `review_queue/queue.csv`.
+   Two Shiny apps coexist:
+   - `shiny/app.R` (port 7474) — original session-note review UI.
+   - `shiny/review_queue/app.R` — Phase 4.5 entity-note review UI with sidebar
+     groups (Failed Generation, NPCs, Locations, Factions), regenerate modal,
+     Merge action (collapses captain + the_captain → basil and writes an alias
+     into the target's frontmatter), diff view, and per-entity critic-finding cards.
 
-5. **Training data capture** (`R/training.R`) — Accepted-as-is → `training_data/sft.jsonl`; accepted-with-edit → `training_data/dpo.jsonl` (chosen/rejected pair); rejected → negative examples.
+   Entity notes are checked against `config/entity_exclusions.csv` (legacy slug
+   drop list) and a new entity-type drop list (rows where
+   `entity_type %in% c("dm_voice", "player")`) before passage aggregation. Known
+   PCs/key NPCs in `config/protected_entities.csv` bypass the chunk-frequency
+   filter. `R/source_c.R` also filters `^unnamed *` names at aggregation time
+   (protected-slug bypass remaps "unnamed Ted" → "ted") and collapses near-typo
+   *location* slugs via `R/postprocess_shared.R::collapse_near_match_slugs()`.
+   The alias registry is seeded from `config/entity_aliases.csv` before scanning
+   vault YAML; vault YAML takes precedence on collision.
+
+5. **Training data capture** (`R/training.R`) — Accepted-as-is → `training_data/sft.jsonl`;
+   accepted-with-edit → `training_data/dpo.jsonl`; rejected → negative examples. Agentic
+   rows do not produce DPO pairs (the markdown is R-assembled, not LLM-generated). Phase 2
+   of the agentic plan covers chunk-level extraction SFT capture (not yet shipped).
 
 After review, `R/writer.R` writes markdown to the vault and `R/git_commit.R` commits.
 
@@ -80,12 +131,28 @@ Always read `config.R` for current model bindings rather than quoting a hardcode
 | `VAULT_PATH` | Absolute path to the wiki repo |
 | `CURRENT_SESSION` | Episode ID to process (update each run) |
 | `DRY_RUN` | `TRUE` skips vault writes; flip to `FALSE` for live run |
-| `CRITIC_AUTO_APPROVE_THRESHOLD` | Confidence ≥ this → auto-approve (default 0.85) |
+| `CRITIC_AUTO_APPROVE_THRESHOLD` | Confidence ≥ this → auto-approve (currently `Inf`, disabled) |
 | `CRITIC_ESCALATE_THRESHOLD` | Confidence < this AND flagged → Claude escalation (default 0.60) |
 | `OLLAMA_MODEL` / `OLLAMA_CRITIC_MODEL` | Model names — must match what Ollama has pulled |
+| `AGENTIC_VTT_SESSION_IDS` | Per-session opt-in vector for the agentic flow (path 3) |
 | `ENTITY_EXCLUSIONS_PATH` | CSV of slugs to drop from entity note generation (DM narrator role tags) |
-| `PROTECTED_ENTITIES_PATH` | CSV of known PCs/key NPCs that bypass the frequency filter |
+| `PROTECTED_ENTITIES_PATH` | CSV of known PCs/key NPCs; `entity_type` column drives drop/keep (see below) |
 | `ENTITY_ALIASES_PATH` | CSV bootstrap for alias registry before vault notes exist (unambiguous name variants only) |
+
+`config/protected_entities.csv` schema:
+`slug, canonical_name, entity_type, played_by, exclude_from_spotting`. The
+`entity_type` column controls behavior across both chains:
+
+| `entity_type` | Agentic (recap NPC list) | Entity chain (wiki page) |
+|---|---|---|
+| `npc` | keep (in protected bypass) | keep |
+| `pc` | **drop** (PCs not in recap NPC list) | **keep** (protagonists need wikis) |
+| `pc_alias` | **drop** | **keep** (Merge UI collapses into canonical PC) |
+| `player` | drop | drop (real human, no wiki) |
+| `dm_voice` | drop | drop (DM persona, no wiki) |
+
+**The two chains intentionally diverge on `pc`/`pc_alias`.** Do not mirror filters
+blindly — see `LESSONS.md` "Two-chain pc/pc_alias divergence".
 
 `ANTHROPIC_API_KEY` lives in `~/.Renviron`, never in the repo. Google Drive auth is cached in the OS keychain via `googledrive::drive_auth()`.
 
@@ -94,6 +161,7 @@ Always read `config.R` for current model bindings rather than quoting a hardcode
 **R / targets**
 - `lapply()` returns named lists; `as.character(x)[[1]]` is needed to drop the name before passing to `data.frame()`. `unname()` alone is insufficient.
 - `tar_files()` crashes on `character(0)`. Use `tar_target(format = "file")` with a `file.create()` fallback for outputs that may not exist yet.
+- targets `pattern = map()` over an unnamed list-stem slices each branch with `x[i]`, yielding `list(record)` not `record`. Unwrap at the top of branch bodies: `ep <- entity_passages[[1]]`.
 
 **Shiny**
 - `setwd()` in `app.R` does not persist into reactive handlers. Compute absolute paths immediately after `setwd()` and pass them explicitly to every function inside `server()`. Never use relative paths in reactive context.
@@ -102,6 +170,12 @@ Always read `config.R` for current model bindings rather than quoting a hardcode
 - Always use `format` (JSON Schema) for critic calls; never for free-text generation.
 - Source text comes from automated transcripts — instruct models to write `[unclear]` rather than guess. Reviewers should treat `[unclear]` markers as expected output, not model failures.
 - The critic prompt requires a direct source quote before raising any issue; consistent paraphrasing must be permitted. See `CRITIC_SYSTEM_PROMPT` in `R/critic.R`.
+- llama3.1:8b does **not** support thinking mode — passing `think = TRUE` produces 131-byte empty responses. Pass `think = FALSE` (or leave `NULL`) for it. qwen3.5 + thinking + `format` is silently broken (Ollama bug #14645), which is why critic and entity-spotting both use llama3.1:8b.
+
+**Pipeline filters**
+- The agentic chain (`R/agentic_postprocess.R`) and the entity chain (`R/source_c.R`) **diverge intentionally on `pc`/`pc_alias`**. Agentic drops them from the session-recap NPC list; entity chain keeps them so PCs get character wiki pages. The Phase 4.5 Merge UI handles consolidating `captain` + `the_captain` → `basil` at review time. Do not mirror filters blindly across the two chains. See `LESSONS.md`.
+- `^unnamed ` names are dropped at entity-passage aggregation unless the stripped slug is protected ("unnamed Ted" → "ted" → kept).
+- Edit-distance slug collapse via `R/postprocess_shared.R::collapse_near_match_slugs()` applies only to `note_type == "location"` records — NPC/faction names cluster too aggressively for unsupervised merge.
 
 **Testing**
 - testthat stubs for globally-sourced functions must be placed in `globalenv()`:
@@ -109,3 +183,4 @@ Always read `config.R` for current model bindings rather than quoting a hardcode
   assign("my_fn", function(...) invisible(NULL), envir = globalenv())
   ```
   A plain assignment inside `test_that()` will not be found by the function under test.
+- `tests/testthat/test-git_commit.R` has pre-existing errors that depend on the fixture path `/the/vault` existing. Not a regression; not in current scope. Investigate only if asked.
