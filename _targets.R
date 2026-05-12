@@ -489,13 +489,18 @@ list(
   ),
 
   # Re-consolidate after agentic staging files exist so they roll into
-  # queue.csv alongside the doc-prep and entity rows.
+  # queue.csv alongside the doc-prep and entity rows. cue=always because
+  # agentic_dispatched returns the same `list("enqueued", ...)` shape across
+  # runs, which lets targets skip this consolidation and leave the agentic
+  # row stuck in review_queue/staging/. consolidate_queue() is idempotent
+  # (no-op when staging is empty), so always running it is safe.
   tar_target(
     agentic_queue_consolidated,
     {
       agentic_dispatched
       consolidate_queue()
-    }
+    },
+    cue = tar_cue(mode = "always")
   )
 
 )

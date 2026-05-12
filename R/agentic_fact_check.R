@@ -46,7 +46,18 @@ suppressPackageStartupMessages({
   supported <- vapply(seq_len(nrow(df)), function(i) {
     .supported_row(line_vec[[i]], max_line, quote_vec[[i]], raw_lines)
   }, logical(1))
-  tibble(kind = kind, line = line_vec, supported = supported)
+  # Pick the human-readable label per kind so reviewers can identify which
+  # claim a line-citation failure refers to.
+  claim_col <- switch(kind,
+    "event"    = if ("event"    %in% names(df)) "event"    else NA_character_,
+    "npc"      = if ("name"     %in% names(df)) "name"     else NA_character_,
+    "location" = if ("name"     %in% names(df)) "name"     else NA_character_,
+    "dialogue" = if ("dialogue" %in% names(df)) "dialogue" else NA_character_,
+    NA_character_
+  )
+  claim_vec <- if (!is.na(claim_col)) as.character(df[[claim_col]])
+               else rep(NA_character_, nrow(df))
+  tibble(kind = kind, line = line_vec, supported = supported, claim = claim_vec)
 }
 
 # Public API. Returns a list with:

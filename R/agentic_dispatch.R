@@ -27,10 +27,33 @@ dispatch_agentic_session <- function(markdown,
   confidence    <- fact_check$confidence    %||% NA_real_
   n_unsupported <- fact_check$n_unsupported %||% 0L
 
+  # Surface unsupported line citations as issues so the reviewer can see what
+  # the mechanical fact-check flagged. Without this the queue row's issues
+  # column is always [] and the Shiny UI's findings panel has nothing to show.
+  issues <- list()
+  results <- fact_check$results
+  if (!is.null(results) && is.data.frame(results) && nrow(results) > 0L) {
+    unsup <- results[!results$supported, , drop = FALSE]
+    if (nrow(unsup) > 0L) {
+      issues <- lapply(seq_len(nrow(unsup)), function(i) {
+        kind  <- unsup$kind[[i]]
+        line  <- unsup$line[[i]]
+        claim <- if ("claim" %in% names(unsup)) unsup$claim[[i]] else NA_character_
+        line_label <- if (is.na(line)) "no line cited" else paste0("line ", line)
+        claim_label <- if (!is.na(claim) && nzchar(claim))
+          paste0(": \"", substr(claim, 1L, 160L),
+                 if (nchar(claim) > 160L) "…\"" else "\"")
+        else ""
+        sprintf("[%s, %s] not grounded in source%s",
+                kind, line_label, claim_label)
+      })
+    }
+  }
+
   verdict_list <- list(
     verdict       = "agentic_no_critic",
     confidence    = confidence,
-    issues        = list(),
+    issues        = issues,
     source_quotes = list(),
     escalated     = FALSE
   )
