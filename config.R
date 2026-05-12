@@ -86,7 +86,7 @@ CURRENT_SESSION <- "s02e34"          # ← update this each session (s01e01 zero
 
 # Set TRUE to write to /tmp/barquentine-preview/ instead of vault
 # Always do a dry run first when testing new extraction prompts
-DRY_RUN         <- TRUE             # ← flip to FALSE when ready for live run
+DRY_RUN         <- FALSE             # ← flip to FALSE when ready for live run
 DRY_RUN_PATH    <- "/tmp/barquentine-preview"
 
 # -----------------------------------------------------------------------------
