@@ -236,6 +236,15 @@ list(
         iteration_log = list(), iteration_count = 1L,
         claude_used = FALSE, escalation_reason = NULL
       ))
+      # PCs have no legacy draft path — always skip to agentic chain or skip entirely.
+      if (isTRUE(ep$note_type == "pc"))
+        return(list(
+          best_draft = NULL, best_confidence = -Inf,
+          final_verdict = list(verdict = "skipped", confidence = NA_real_,
+                               issues = list(), source_quotes = list()),
+          iteration_log = list(), iteration_count = 1L,
+          claude_used = FALSE, escalation_reason = "pc_no_legacy_path"
+        ))
       # Skip legacy critic-loop for sessions routed through the agentic entity chain.
       if (length(AGENTIC_ENTITY_SESSION_IDS) > 0L &&
           any(ep$source_episode_ids %in% AGENTIC_ENTITY_SESSION_IDS))
@@ -268,6 +277,8 @@ list(
     {
       ep <- entity_passages[[1]]
       if (is.null(ep)) return(invisible(NULL))
+      # PCs have no legacy dispatch path.
+      if (isTRUE(ep$note_type == "pc")) return(invisible(NULL))
       # Skip dispatch for sessions handled by the agentic entity chain.
       if (length(AGENTIC_ENTITY_SESSION_IDS) > 0L &&
           any(ep$source_episode_ids %in% AGENTIC_ENTITY_SESSION_IDS))
