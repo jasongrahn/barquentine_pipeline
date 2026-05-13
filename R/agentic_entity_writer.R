@@ -125,18 +125,9 @@ if (!exists(".fmt_yaml_list", mode = "function")) {
     body <- c(body, "## Role in Story", "", role, "")
 
   # Relationships
-  rel_list  <- .fmt_item_list(extraction$relatives, "name")
-  affl_list <- .fmt_item_list(extraction$affiliations, "name")
-  if (!is.null(rel_list) || !is.null(affl_list)) {
-    body <- c(body, "## Relationships", "")
-    if (!is.null(rel_list))  body <- c(body, rel_list,  "")
-    if (!is.null(affl_list)) body <- c(body, affl_list, "")
-  }
-
-  # Alignment
-  aln <- .get_value(extraction$alignment)
-  if (!is.null(aln))
-    body <- c(body, "## Alignment", "", aln, "")
+  rel_list <- .fmt_item_list(extraction$relatives, "name")
+  if (!is.null(rel_list))
+    body <- c(body, "## Relationships", "", rel_list, "")
 
   paste(c(fm, "", body), collapse = "\n")
 }
@@ -164,10 +155,6 @@ if (!exists(".fmt_yaml_list", mode = "function")) {
   if (!is.null(pers))
     body <- c(body, "## Personality", "", pers, "")
 
-  affl_list <- .fmt_item_list(extraction$affiliations, "name")
-  if (!is.null(affl_list))
-    body <- c(body, "## Affiliations", "", affl_list, "")
-
   paste(c(fm, "", body), collapse = "\n")
 }
 
@@ -194,13 +181,6 @@ if (!exists(".fmt_yaml_list", mode = "function")) {
   event_list <- .fmt_item_list(extraction$events_witnessed, "event")
   if (!is.null(event_list))
     body <- c(body, "## Events", "", event_list, "")
-
-  if (!is.null(extraction$connections) && length(extraction$connections) > 0L) {
-    conns <- as.character(extraction$connections)
-    conns <- conns[!is.na(conns) & nzchar(conns)]
-    if (length(conns) > 0L)
-      body <- c(body, "## Connections", "", paste0("- ", conns, collapse = "\n"), "")
-  }
 
   paste(c(fm, "", body), collapse = "\n")
 }

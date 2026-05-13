@@ -12,7 +12,7 @@ Your job is to extract structured information about this faction from the SOURCE
 
 ## Citation rules
 
-Every field you populate **must cite a line number from the SOURCE PASSAGES**.
+Every field you populate **must cite a passage number**: set `line` to the N from the `PASSAGE [N]:` label that contains the evidence. Do NOT use numbers found inside the passage text.
 If you cannot find support for a field in the source, the field value must be `null` (or an empty array `[]` for array fields).
 
 Do NOT invent details. Do NOT infer. If something is unclear, write `[unclear]` as the value.

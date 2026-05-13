@@ -57,7 +57,7 @@ test_that(".truncate_passages always keeps at least one passage", {
 SKILLS_DIR <- test_path("../../agents/wiki_skills")
 
 test_that("extract_entity returns correct entity_id and note_type", {
-  assign(".call_ollama_skill", function(...) '{"description": {"value": "A githyanki soldier.", "line": 1}, "aliases": [], "exhibited_personality": {"value": null, "line": null}, "role_in_story": {"value": null, "line": null}, "affiliations": []}',
+  assign(".call_ollama_skill", function(...) '{"description": {"value": "A githyanki soldier.", "line": 1}, "aliases": [], "exhibited_personality": {"value": null, "line": null}, "role_in_story": {"value": null, "line": null}}',
          envir = globalenv())
   on.exit(rm(".call_ollama_skill", envir = globalenv()), add = TRUE)
 
@@ -97,7 +97,7 @@ test_that("extract_entity uses pc skill for pc note_type", {
   skill_used <- NULL
   assign(".call_ollama_skill", function(model, base_url, system, user, ...) {
     skill_used <<- if (grepl("player character", system, ignore.case = TRUE)) "pc" else "other"
-    '{"bio": {"value": null, "line": null}, "description": {"value": null, "line": null}, "aliases": [], "exhibited_personality": {"value": null, "line": null}, "role_in_story": {"value": null, "line": null}, "relatives": [], "affiliations": [], "alignment": {"value": null, "line": null}}'
+    '{"bio": {"value": null, "line": null}, "description": {"value": null, "line": null}, "aliases": [], "exhibited_personality": {"value": null, "line": null}, "role_in_story": {"value": null, "line": null}, "relatives": []}'
   }, envir = globalenv())
   on.exit(rm(".call_ollama_skill", envir = globalenv()), add = TRUE)
 

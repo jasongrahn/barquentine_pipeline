@@ -42,9 +42,10 @@ if (!exists("entity_schema", mode = "function")) {
 }
 
 # Number each passage so the extraction model can cite specific entries.
-# Returns a single formatted string "1. <p1>\n\n2. <p2>\n\n..."
+# Returns a single formatted string "PASSAGE [1]:\n<p1>\n\nPASSAGE [2]:\n<p2>\n\n..."
+# The PASSAGE [N] label is deliberately distinct from numbers embedded in VTT content.
 .number_passages <- function(passages) {
-  paste(seq_along(passages), passages, sep = ". ", collapse = "\n\n")
+  paste(paste0("PASSAGE [", seq_along(passages), "]:\n", passages), collapse = "\n\n")
 }
 
 # Drop trailing passages that push total word count over the limit.

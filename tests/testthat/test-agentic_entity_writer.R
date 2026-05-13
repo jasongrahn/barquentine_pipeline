@@ -24,9 +24,7 @@ make_pc_extraction <- function() {
     description = list(value = "Tall and weathered.", line = 1L),
     exhibited_personality = list(value = "Stoic but caring.", line = 2L),
     role_in_story = list(value = "Ship captain of the crew.", line = 1L),
-    relatives = list(),
-    affiliations = list(list(name = "The Crew", line = 1L)),
-    alignment = list(value = "Neutral Good", line = 1L)
+    relatives = list()
   )
 }
 
@@ -35,8 +33,7 @@ make_npc_extraction <- function() {
     aliases = list(),
     description = list(value = "A mysterious merchant.", line = 1L),
     role_in_story = list(value = "Provides quest hooks.", line = 2L),
-    exhibited_personality = list(value = "Friendly but evasive.", line = 1L),
-    affiliations = list(list(name = "Merchant Guild", line = 2L))
+    exhibited_personality = list(value = "Friendly but evasive.", line = 1L)
   )
 }
 
@@ -45,8 +42,7 @@ make_location_extraction <- function() {
     description = list(value = "A bustling port city.", line = 1L),
     region = list(value = "The Southern Coast", line = 1L),
     notable_features = list(list(feature = "Grand lighthouse", line = 2L)),
-    events_witnessed = list(),
-    connections = list("Nearby town of Redbrook")
+    events_witnessed = list()
   )
 }
 
@@ -92,12 +88,6 @@ test_that("npc note_type returns non-empty markdown", {
 test_that("npc markdown contains Overview section", {
   md <- assemble_entity_markdown(make_npc_extraction(), make_entity_record("npc"))
   expect_true(grepl("## Overview", md))
-})
-
-test_that("npc markdown contains Affiliations section when affiliations present", {
-  md <- assemble_entity_markdown(make_npc_extraction(), make_entity_record("npc"))
-  expect_true(grepl("## Affiliations", md))
-  expect_true(grepl("Merchant Guild", md))
 })
 
 # ---------------------------------------------------------------------------
@@ -196,13 +186,6 @@ test_that("unknown note_type throws an error", {
 # ---------------------------------------------------------------------------
 # Empty arrays omit sections
 # ---------------------------------------------------------------------------
-
-test_that("empty affiliations omits Affiliations section in npc", {
-  ext <- make_npc_extraction()
-  ext$affiliations <- list()
-  md  <- assemble_entity_markdown(ext, make_entity_record("npc"))
-  expect_false(grepl("## Affiliations", md))
-})
 
 test_that("empty goals omits Goals section in faction", {
   ext <- make_faction_extraction()

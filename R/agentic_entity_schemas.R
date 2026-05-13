@@ -42,7 +42,7 @@ entity_schema <- function(note_type) {
   )
 }
 
-entity_schema_version <- function() AGENTIC_ENTITY_SCHEMA_VERSION
+entity_schema_version <- function() AGENTIC_ENTITY_SCHEMA_VERSION  # v2
 
 # ---------------------------------------------------------------------------
 # Per-type schemas
@@ -68,15 +68,10 @@ entity_schema_version <- function() AGENTIC_ENTITY_SCHEMA_VERSION
           ),
           required = c("name", "relation", "line")
         )
-      ),
-      affiliations = list(
-        type  = "array",
-        items = .named_line_item("name")
-      ),
-      alignment = .valued_field()
+      )
     ),
     required = c("bio", "description", "aliases", "exhibited_personality",
-                 "role_in_story", "relatives", "affiliations", "alignment")
+                 "role_in_story", "relatives")
   )
 }
 
@@ -87,14 +82,9 @@ entity_schema_version <- function() AGENTIC_ENTITY_SCHEMA_VERSION
       description           = .valued_field(),
       aliases               = list(type = "array", items = list(type = "string")),
       exhibited_personality = .valued_field(),
-      role_in_story         = .valued_field(),
-      affiliations          = list(
-        type  = "array",
-        items = .named_line_item("name")
-      )
+      role_in_story         = .valued_field()
     ),
-    required = c("description", "aliases", "exhibited_personality",
-                 "role_in_story", "affiliations")
+    required = c("description", "aliases", "exhibited_personality", "role_in_story")
   )
 }
 
@@ -118,11 +108,9 @@ entity_schema_version <- function() AGENTIC_ENTITY_SCHEMA_VERSION
           ),
           required = c("event", "line")
         )
-      ),
-      connections = list(type = "array", items = list(type = "string"))
+      )
     ),
-    required = c("description", "region", "notable_features",
-                 "events_witnessed", "connections")
+    required = character(0)
   )
 }
 
