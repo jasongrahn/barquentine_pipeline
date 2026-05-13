@@ -27,11 +27,8 @@ testthat::test_dir("tests/testthat/")
 # Run a single test file
 testthat::test_file("tests/testthat/test-critic.R")
 
-# Launch the session-note review UI (Path 1 / Path 3 agentic session rows)
-shiny::runApp("shiny", port = 7474)
-
-# Launch the entity-note review UI (Path 2 NPC / location / faction rows)
-shiny::runApp("shiny/review_queue", port = 7475)
+# Launch the review UI (sessions, NPCs, locations, factions — all paths)
+shiny::runApp("shiny/review_queue", port = 7474)
 ```
 
 Before a live run, set `DRY_RUN <- FALSE` in `config.R`. Update `CURRENT_SESSION` to the episode being processed (e.g., `"s02e34"`).
