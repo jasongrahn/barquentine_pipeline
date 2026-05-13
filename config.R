@@ -118,6 +118,14 @@ ACTIVE_EPISODES <- NULL
 # Episodes NOT in this vector run the existing critic-loop path unchanged.
 AGENTIC_VTT_SESSION_IDS  <- c("s02e34", "s02e35", "s02e36")
 
+# --- Phase 4.2: agentic entity-note chain opt-in --------------------------
+# Add episode IDs here to run entity notes through schema-enforced extraction
+# instead of the legacy critic-loop path. Start empty; Phase 4.1 adds first ID.
+AGENTIC_ENTITY_SESSION_IDS        <- character(0)
+AGENTIC_ENTITY_SCHEMA_VERSION     <- "v1"
+AGENTIC_ENTITY_PASSAGE_WORD_LIMIT <- 4000L
+AGENTIC_ENTITY_MODEL              <- OLLAMA_MODEL
+
 AGENTIC_CHUNK_SIZE_LINES <- 50L                                # dialogue lines per chunk (~800-1000 words)
 AGENTIC_EVENT_KEEP_N     <- 18L                                # events kept after prune_events scoring
 AGENTIC_DIALOGUE_KEEP_N  <- 8L                                 # significant-dialogue cap

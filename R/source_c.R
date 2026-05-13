@@ -30,6 +30,18 @@ ENTITY_SPOT_SYSTEM_PROMPT <- paste(
   sep = "\n"
 )
 
+load_canonical_routing_map <- function(protected_path = PROTECTED_ENTITIES_PATH) {
+  if (!file.exists(protected_path)) return(character(0))
+  df <- read_csv(protected_path, show_col_types = FALSE)
+  if (!all(c("slug", "canonical_name") %in% names(df))) return(character(0))
+  df$canonical_slug <- vapply(df$canonical_name, make_slug, character(1))
+  alias_rows <- df[!is.na(df$slug) & df$slug != df$canonical_slug, ]
+  if (nrow(alias_rows) == 0L) return(character(0))
+  result <- alias_rows$canonical_slug
+  names(result) <- alias_rows$slug
+  result
+}
+
 load_entity_exclusions <- function(path = ENTITY_EXCLUSIONS_PATH) {
   if (!file.exists(path)) return(character(0))
   df <- read_csv(path, show_col_types = FALSE)
@@ -225,7 +237,8 @@ extract_relevant_sentences <- function(passage, entity_name, window = 2L) {
 aggregate_entity_passages <- function(vtt_file_results, alias_registry,
                                       min_chunks = MIN_ENTITY_CHUNK_COUNT,
                                       exclusion_slugs = character(0),
-                                      protected_slugs = character(0)) {
+                                      protected_slugs = character(0),
+                                      protected_path  = PROTECTED_ENTITIES_PATH) {
   type_to_note <- c(npcs = "npc", locations = "location", factions = "faction")
   acc <- list()
 
@@ -278,6 +291,67 @@ aggregate_entity_passages <- function(vtt_file_results, alias_registry,
         } else {
           acc[[slug]]$source_passages    <- c(acc[[slug]]$source_passages, chunks)
           acc[[slug]]$source_episode_ids <- c(acc[[slug]]$source_episode_ids, ep_id)
+        }
+      }
+    }
+  }
+
+  # Step 1.5: canonical routing — merge alias slugs into their canonical slug.
+  # For example, captain + the_captain → basil. Aliases are rows in
+  # protected_entities.csv where slug != make_slug(canonical_name).
+  # Also enriches note_type to "pc" for any record whose canonical entity_type
+  # is "pc" — required so entity_schema("pc") fires correctly downstream.
+  routing_map <- load_canonical_routing_map(protected_path)
+  if (length(routing_map) > 0L) {
+    prot_df <- tryCatch(read_csv(protected_path, show_col_types = FALSE),
+                        error = function(e) NULL)
+
+    for (alias_slug in names(routing_map)) {
+      if (!alias_slug %in% names(acc)) next
+      canonical_slug <- routing_map[[alias_slug]]
+      alias_rec      <- acc[[alias_slug]]
+
+      canonical_name_val <- canonical_slug   # fallback display name
+      canonical_type     <- alias_rec$note_type
+      if (!is.null(prot_df)) {
+        can_row <- prot_df[!is.na(prot_df$slug) & prot_df$slug == canonical_slug, ]
+        if (nrow(can_row) > 0L) {
+          canonical_name_val <- can_row$canonical_name[[1]]
+          if (!is.na(can_row$entity_type[[1]]) && can_row$entity_type[[1]] == "pc")
+            canonical_type <- "pc"
+        }
+      }
+
+      if (!canonical_slug %in% names(acc)) {
+        acc[[canonical_slug]] <- list(
+          entity_id          = canonical_slug,
+          entity_name        = canonical_name_val,
+          note_type          = canonical_type,
+          source_passages    = alias_rec$source_passages,
+          source_episode_ids = alias_rec$source_episode_ids
+        )
+      } else {
+        acc[[canonical_slug]]$source_passages    <- c(acc[[canonical_slug]]$source_passages,
+                                                      alias_rec$source_passages)
+        acc[[canonical_slug]]$source_episode_ids <- c(acc[[canonical_slug]]$source_episode_ids,
+                                                      alias_rec$source_episode_ids)
+        acc[[canonical_slug]]$entity_name <- canonical_name_val
+        if (canonical_type == "pc") acc[[canonical_slug]]$note_type <- "pc"
+      }
+      acc[[alias_slug]] <- NULL
+      message(sprintf("  [canonical routing] '%s' → '%s'", alias_slug, canonical_slug))
+    }
+
+    # Enrich canonical-slug records that are themselves in protected_entities.csv
+    # as entity_type "pc" (e.g. the basil row itself, if spotted).
+    if (!is.null(prot_df)) {
+      pc_rows <- prot_df[!is.na(prot_df$entity_type) & prot_df$entity_type == "pc" &
+                         !is.na(prot_df$slug), ]
+      for (i in seq_len(nrow(pc_rows))) {
+        s <- pc_rows$slug[[i]]
+        if (s %in% names(acc)) {
+          acc[[s]]$note_type   <- "pc"
+          acc[[s]]$entity_name <- pc_rows$canonical_name[[i]]
         }
       }
     }

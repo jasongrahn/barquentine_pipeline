@@ -17,8 +17,8 @@ protected_rows_full <- function() {
   tibble::tibble(
     slug                  = c("ted",   "the_admiral", "basil", "captain",
                               "the_captain", "john"),
-    canonical_name        = c("Ted",   "The Admiral", "Basil", "Captain",
-                              "The Captain", "John"),
+    canonical_name        = c("Ted",   "The Admiral", "Basil", "Basil",
+                              "Basil",       "John"),
     entity_type           = c("npc",   "dm_voice",    "pc",    "pc_alias",
                               "pc_alias",    "player"),
     played_by             = c(NA,      NA,            "David", "David",
@@ -243,4 +243,119 @@ test_that("'Captain' (pc_alias) DIVERGES: agentic drops from NPC list; entity ch
                                       pc_drop_slugs = "captain")
   expect_equal(entity_d,  "keep")
   expect_equal(agentic_d, "drop")
+})
+
+# ---- load_canonical_routing_map ---------------------------------------------
+
+test_that("load_canonical_routing_map returns alias → canonical slug vector", {
+  pf <- write_protected_fixture(protected_rows_full())
+  out <- load_canonical_routing_map(pf)
+  # captain → basil (make_slug("Captain")="captain", make_slug("Basil")="basil")
+  # the_captain → basil (make_slug("The Captain")="the_captain")
+  expect_true("captain" %in% names(out))
+  expect_true("the_captain" %in% names(out))
+  expect_equal(unname(out["captain"]), "basil")
+  expect_equal(unname(out["the_captain"]), "basil")
+})
+
+test_that("load_canonical_routing_map excludes rows where slug == make_slug(canonical_name)", {
+  pf <- write_protected_fixture(protected_rows_full())
+  out <- load_canonical_routing_map(pf)
+  # basil row: slug="basil", make_slug("Basil")="basil" — same, so NOT in map
+  expect_false("basil" %in% names(out))
+  # ted row: slug="ted", make_slug("Ted")="ted" — same, so NOT in map
+  expect_false("ted" %in% names(out))
+})
+
+test_that("load_canonical_routing_map returns character(0) for missing file", {
+  out <- load_canonical_routing_map("/nonexistent/path.csv")
+  expect_equal(out, character(0))
+})
+
+# ---- aggregate_entity_passages: canonical routing ---------------------------
+
+test_that("aggregate_entity_passages merges captain + the_captain + basil into one basil record", {
+  assign("resolve_alias", function(...) NULL, envir = globalenv())
+  on.exit(rm("resolve_alias", envir = globalenv()), add = TRUE)
+
+  pf <- write_protected_fixture(protected_rows_full())
+
+  file1 <- list(
+    episode_id = "s02e36",
+    npcs       = list(
+      "captain"     = list("passage_c1", "passage_c2", "passage_c3"),
+      "the captain" = list("passage_t1", "passage_t2"),
+      "basil"       = list("passage_b1")
+    ),
+    locations = list(), items = list(), factions = list()
+  )
+
+  result <- aggregate_entity_passages(
+    list(file1), list(),
+    min_chunks      = 1L,
+    protected_slugs = c("basil", "captain", "the_captain"),
+    protected_path  = pf
+  )
+
+  slugs <- vapply(result, `[[`, character(1), "entity_id")
+  expect_true("basil" %in% slugs)
+  expect_false("captain" %in% slugs)
+  expect_false("the_captain" %in% slugs)
+
+  basil_rec <- result[[which(slugs == "basil")]]
+  expect_equal(basil_rec$entity_name, "Basil")
+  expect_equal(basil_rec$note_type, "pc")
+  expect_equal(length(basil_rec$source_passages), 6L)
+})
+
+test_that("aggregate_entity_passages enriches basil note_type to 'pc' even without alias passages", {
+  assign("resolve_alias", function(...) NULL, envir = globalenv())
+  on.exit(rm("resolve_alias", envir = globalenv()), add = TRUE)
+
+  pf <- write_protected_fixture(protected_rows_full())
+
+  file1 <- list(
+    episode_id = "s02e36",
+    npcs       = list("basil" = list("p1", "p2", "p3")),
+    locations  = list(), items = list(), factions = list()
+  )
+
+  result <- aggregate_entity_passages(
+    list(file1), list(),
+    min_chunks     = 1L,
+    protected_path = pf
+  )
+
+  basil_rec <- Filter(function(r) r$entity_id == "basil", result)[[1]]
+  expect_equal(basil_rec$note_type, "pc")
+  expect_equal(basil_rec$entity_name, "Basil")
+})
+
+test_that("aggregate_entity_passages leaves non-aliased entities unaffected by routing", {
+  assign("resolve_alias", function(...) NULL, envir = globalenv())
+  on.exit(rm("resolve_alias", envir = globalenv()), add = TRUE)
+
+  pf <- write_protected_fixture(protected_rows_full())
+
+  file1 <- list(
+    episode_id = "s02e36",
+    npcs       = list(
+      "attorrnash" = list("p1", "p2", "p3"),
+      "ted"        = list("p4", "p5", "p6")
+    ),
+    locations = list(), items = list(), factions = list()
+  )
+
+  result <- aggregate_entity_passages(
+    list(file1), list(),
+    min_chunks     = 1L,
+    protected_path = pf
+  )
+
+  slugs <- vapply(result, `[[`, character(1), "entity_id")
+  expect_true("attorrnash" %in% slugs)
+  expect_true("ted" %in% slugs)
+  # ted stays "npc" — its entity_type in the fixture is "npc"
+  ted_rec <- result[[which(slugs == "ted")]]
+  expect_equal(ted_rec$note_type, "npc")
 })
