@@ -32,6 +32,11 @@ source("R/agentic_extract.R")
 source("R/agentic_fact_check.R")
 source("R/agentic_writer.R")
 source("R/agentic_dispatch.R")
+source("R/agentic_entity_schemas.R")
+source("R/agentic_entity_extract.R")
+source("R/agentic_entity_writer.R")
+source("R/agentic_entity_fact_check.R")
+source("R/agentic_entity_dispatch.R")
 
 list(
 
@@ -231,6 +236,16 @@ list(
         iteration_log = list(), iteration_count = 1L,
         claude_used = FALSE, escalation_reason = NULL
       ))
+      # Skip legacy critic-loop for sessions routed through the agentic entity chain.
+      if (length(AGENTIC_ENTITY_SESSION_IDS) > 0L &&
+          any(ep$source_episode_ids %in% AGENTIC_ENTITY_SESSION_IDS))
+        return(list(
+          best_draft = NULL, best_confidence = -Inf,
+          final_verdict = list(verdict = "skipped", confidence = NA_real_,
+                               issues = list(), source_quotes = list()),
+          iteration_log = list(), iteration_count = 1L,
+          claude_used = FALSE, escalation_reason = "agentic_entity_opt_in"
+        ))
       rel_path   <- .entity_relative_path(ep$entity_id, ep$note_type)
       full_path  <- file.path(VAULT_PATH, rel_path)
       vault_note <- if (file.exists(full_path))
@@ -253,6 +268,10 @@ list(
     {
       ep <- entity_passages[[1]]
       if (is.null(ep)) return(invisible(NULL))
+      # Skip dispatch for sessions handled by the agentic entity chain.
+      if (length(AGENTIC_ENTITY_SESSION_IDS) > 0L &&
+          any(ep$source_episode_ids %in% AGENTIC_ENTITY_SESSION_IDS))
+        return(invisible(NULL))
       dispatch_entity_note(
         refinement_result  = entity_refined,
         entity_id          = ep$entity_id,
@@ -265,13 +284,84 @@ list(
     pattern = map(entity_refined, entity_passages)
   ),
 
-  # Consolidate entity staging files into queue.csv
+  # Consolidate entity staging files into queue.csv.
+  # cue=always: dispatched targets return same shape across runs (targets would
+  # otherwise skip consolidation and leave staging files unmerged).
   tar_target(
     entity_queue_consolidated,
     {
       entity_dispatched
+      entity_agentic_dispatched
       consolidate_queue()
+    },
+    cue = tar_cue(mode = "always")
+  ),
+
+  # --- Phase 4.2: Agentic entity-note chain ----------------------------------
+  # Per-session opt-in via AGENTIC_ENTITY_SESSION_IDS (character(0) = disabled).
+  # When empty, entity_agentic_targets returns list(NULL) and all downstream
+  # branches short-circuit — no LLM calls fire.
+
+  tar_target(
+    entity_agentic_targets,
+    {
+      if (length(AGENTIC_ENTITY_SESSION_IDS) == 0L) return(list(NULL))
+      keep <- vapply(entity_passages, function(ep) {
+        !is.null(ep) && length(ep$source_episode_ids) > 0L &&
+          any(ep$source_episode_ids %in% AGENTIC_ENTITY_SESSION_IDS)
+      }, logical(1))
+      if (!any(keep)) list(NULL) else entity_passages[keep]
     }
+  ),
+
+  tar_target(
+    entity_agentic_extracted,
+    {
+      ep <- entity_agentic_targets[[1]]
+      if (is.null(ep)) return(list(entity_id = NA_character_, note_type = NA_character_,
+                                   extraction = NULL, timed_out = FALSE))
+      extract_entity(ep)
+    },
+    pattern = map(entity_agentic_targets)
+  ),
+
+  tar_target(
+    entity_agentic_markdown,
+    {
+      ep <- entity_agentic_targets[[1]]
+      if (is.null(ep) || is.null(entity_agentic_extracted$extraction)) return("")
+      assemble_entity_markdown(entity_agentic_extracted$extraction, ep)
+    },
+    pattern = map(entity_agentic_targets, entity_agentic_extracted)
+  ),
+
+  tar_target(
+    entity_agentic_fact_check_result,
+    {
+      ep <- entity_agentic_targets[[1]]
+      if (is.null(ep) || is.null(entity_agentic_extracted$extraction))
+        return(list(n_checked = 0L, n_unsupported = 0L, confidence = NA_real_,
+                    results = tibble::tibble(kind = character(), line = integer(),
+                                            supported = logical(), claim = character())))
+      verify_entity_citations(entity_agentic_extracted$extraction, ep)
+    },
+    pattern = map(entity_agentic_targets, entity_agentic_extracted)
+  ),
+
+  tar_target(
+    entity_agentic_dispatched,
+    {
+      ep <- entity_agentic_targets[[1]]
+      if (is.null(ep) || is.null(entity_agentic_extracted$extraction))
+        return(invisible(NULL))
+      dispatch_agentic_entity(
+        markdown           = entity_agentic_markdown,
+        entity_record      = ep,
+        fact_check_summary = entity_agentic_fact_check_result
+      )
+    },
+    pattern = map(entity_agentic_targets, entity_agentic_extracted,
+                  entity_agentic_markdown, entity_agentic_fact_check_result)
   ),
 
   # --- Phase 0: Agentic VTT → session-note chain -----------------------------
