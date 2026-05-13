@@ -48,6 +48,15 @@ The new agentic flow (per-chunk schema-enforced extraction → R-assembled markd
    - `<sid>` for non-opt-in episodes → `vault/sessions/<sid>.md` (existing behavior, unchanged)
 4. Keep the opt-in vector small until 3 sessions have shipped with approved output; do not flip agentic to default before then.
 
+### Opting entities into the agentic entity flow (Phase 4.2)
+
+The entity-agentic flow (per-entity schema-enforced extraction → R-assembled markdown → line-citation fact-check, no critic loop) ships behind `AGENTIC_ENTITY_SESSION_IDS`. Default is `character(0)` (no opt-in).
+
+1. Add the episode id to `AGENTIC_ENTITY_SESSION_IDS` in `config.R`. Any entity whose `source_episode_ids` overlaps this vector will be routed through the new chain; all others use the legacy critic loop.
+2. Run `targets::tar_make()` as usual. The agentic entity chain produces queue rows with `note_type` set to the entity type (`npc`, `location`, `faction`, or `pc`).
+3. Canonical-routing merges PC aliases before extraction: `captain` and `the_captain` passages are merged into the `basil` record, and `note_type` is enriched to `"pc"`. This happens in `aggregate_entity_passages()` and is not gated on the opt-in vector.
+4. Do not populate `AGENTIC_ENTITY_SESSION_IDS` until at least one session has been validated end-to-end.
+
 ## Architecture
 
 The pipeline has **three parallel input/output paths**, all dispatched from `_targets.R`:
@@ -59,10 +68,11 @@ For episodes in `AGENTIC_VTT_SESSION_IDS`, writer redirects this output to
 canonical VTT recap).
 
 **Path 2 — Entity-spotting flow** (`R/source_c.R::process_vtt_file` →
-`aggregate_entity_passages` → `R/extract.R::draft_with_refinement`). Spots names
-in the VTT, accumulates passages per slug, then runs the recursive generator-critic
-loop to draft per-entity wiki pages (`vault/npcs/<slug>.md`,
-`vault/locations/<slug>.md`, `vault/factions/<slug>.md`).
+`aggregate_entity_passages` → either the legacy critic loop or the new agentic entity chain).
+Spots names in the VTT, accumulates passages per slug, then:
+- **Legacy path** (default): `R/extract.R::draft_with_refinement` runs the recursive generator-critic loop to draft per-entity wiki pages.
+- **Agentic path** (opt-in via `AGENTIC_ENTITY_SESSION_IDS`): `R/agentic_entity_extract.R` + `R/agentic_entity_writer.R` + `R/agentic_entity_fact_check.R` + `R/agentic_entity_dispatch.R` perform schema-enforced extraction → R-assembled markdown → line-citation grounding check (no critic loop). Verdict is always `agentic_no_critic` → review queue.
+Output for both paths: `vault/npcs/<slug>.md`, `vault/locations/<slug>.md`, `vault/factions/<slug>.md` (PCs route to `vault/npcs/`).
 
 **Path 3 — Agentic session flow** (`R/agentic_extract.R` + `R/agentic_postprocess.R`
 + `R/agentic_writer.R` + `R/agentic_dispatch.R`). Per-chunk schema-enforced
@@ -118,8 +128,8 @@ After review, `R/writer.R` writes markdown to the vault and `R/git_commit.R` com
 
 ## Model roles
 
-- **`OLLAMA_MODEL`** (currently `gemma4:latest`) — generator only (session and entity note drafting)
-- **`OLLAMA_CRITIC_MODEL`** (currently `llama3.1:8b`) — critic only (fact-checking, JSON structured output)
+- **`OLLAMA_MODEL`** (currently `gemma4:latest`) — generator for session/entity note drafting (legacy paths); also drives `AGENTIC_ENTITY_MODEL` for schema-enforced entity extraction in the Phase 4.2 agentic chain
+- **`OLLAMA_CRITIC_MODEL`** (currently `llama3.1:8b`) — critic only (fact-checking, JSON structured output); not used in agentic entity chain
 - **claude-sonnet-4-6** — escalation only (cap-hit revision after `DRAFT_MAX_ITERATIONS`, high-word-count routing, or low-confidence flagged tiebreak)
 
 Always read `config.R` for current model bindings rather than quoting a hardcoded name. Never swap generator and critic models without explicit instruction.
@@ -134,7 +144,11 @@ Always read `config.R` for current model bindings rather than quoting a hardcode
 | `CRITIC_AUTO_APPROVE_THRESHOLD` | Confidence ≥ this → auto-approve (currently `Inf`, disabled) |
 | `CRITIC_ESCALATE_THRESHOLD` | Confidence < this AND flagged → Claude escalation (default 0.60) |
 | `OLLAMA_MODEL` / `OLLAMA_CRITIC_MODEL` | Model names — must match what Ollama has pulled |
-| `AGENTIC_VTT_SESSION_IDS` | Per-session opt-in vector for the agentic flow (path 3) |
+| `AGENTIC_VTT_SESSION_IDS` | Per-session opt-in vector for the agentic session flow (path 3) |
+| `AGENTIC_ENTITY_SESSION_IDS` | Per-session opt-in vector for the agentic entity flow (Phase 4.2); default `character(0)` |
+| `AGENTIC_ENTITY_MODEL` | Model for schema-enforced entity extraction; defaults to `OLLAMA_MODEL` |
+| `AGENTIC_ENTITY_PASSAGE_WORD_LIMIT` | Max words of source passages fed to entity extractor (default 4000L) |
+| `AGENTIC_ENTITY_SCHEMA_VERSION` | Schema version tag written to iteration log (default `"v1"`) |
 | `ENTITY_EXCLUSIONS_PATH` | CSV of slugs to drop from entity note generation (DM narrator role tags) |
 | `PROTECTED_ENTITIES_PATH` | CSV of known PCs/key NPCs; `entity_type` column drives drop/keep (see below) |
 | `ENTITY_ALIASES_PATH` | CSV bootstrap for alias registry before vault notes exist (unambiguous name variants only) |
@@ -173,9 +187,10 @@ blindly — see `LESSONS.md` "Two-chain pc/pc_alias divergence".
 - llama3.1:8b does **not** support thinking mode — passing `think = TRUE` produces 131-byte empty responses. Pass `think = FALSE` (or leave `NULL`) for it. qwen3.5 + thinking + `format` is silently broken (Ollama bug #14645), which is why critic and entity-spotting both use llama3.1:8b.
 
 **Pipeline filters**
-- The agentic chain (`R/agentic_postprocess.R`) and the entity chain (`R/source_c.R`) **diverge intentionally on `pc`/`pc_alias`**. Agentic drops them from the session-recap NPC list; entity chain keeps them so PCs get character wiki pages. The Phase 4.5 Merge UI handles consolidating `captain` + `the_captain` → `basil` at review time. Do not mirror filters blindly across the two chains. See `LESSONS.md`.
+- The agentic chain (`R/agentic_postprocess.R`) and the entity chain (`R/source_c.R`) **diverge intentionally on `pc`/`pc_alias`**. Agentic drops them from the session-recap NPC list; entity chain keeps them so PCs get character wiki pages. Do not mirror filters blindly across the two chains. See `LESSONS.md`.
 - `^unnamed ` names are dropped at entity-passage aggregation unless the stripped slug is protected ("unnamed Ted" → "ted" → kept).
 - Edit-distance slug collapse via `R/postprocess_shared.R::collapse_near_match_slugs()` applies only to `note_type == "location"` records — NPC/faction names cluster too aggressively for unsupervised merge.
+- **Canonical routing** (`R/source_c.R::load_canonical_routing_map()`): at passage aggregation, alias slugs (rows in `protected_entities.csv` where `make_slug(canonical_name) != slug`) are merged into their canonical slug. Example: `captain` + `the_captain` passages merge into `basil`; `entity_name` is set to the canonical_name ("Basil"); `note_type` is enriched to `"pc"` if the canonical entity_type is `"pc"`. This fires for every run (not gated on `AGENTIC_ENTITY_SESSION_IDS`), ensuring both the legacy and agentic entity chains see merged records.
 
 **Testing**
 - testthat stubs for globally-sourced functions must be placed in `globalenv()`:
