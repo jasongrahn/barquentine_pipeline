@@ -213,3 +213,345 @@ test_that("generate_training_data loads prompt from file when present", {
   records <- read_jsonl(file.path(tmp_t, "sft.jsonl"))
   expect_equal(records[[1]]$prompt, "stored prompt")
 })
+
+# --- write_intermediate_pairs_from_log() ------------------------------------
+
+test_that("write_intermediate_pairs_from_log returns 0 for fewer than 2 entries", {
+  tmp <- local_tempdir()
+  expect_equal(
+    write_intermediate_pairs_from_log("S2e10", "p", list(), .path = tmp),
+    0L
+  )
+  one_entry <- list(list(draft = "d", confidence = 0.5))
+  expect_equal(
+    write_intermediate_pairs_from_log("S2e10", "p", one_entry, .path = tmp),
+    0L
+  )
+})
+
+test_that("write_intermediate_pairs_from_log writes DPO when confidence improves", {
+  tmp <- local_tempdir()
+  log <- list(
+    list(draft = "first draft",  confidence = 0.55),
+    list(draft = "second draft", confidence = 0.80)
+  )
+  n <- write_intermediate_pairs_from_log("S2e10", "p", log, .path = tmp)
+  expect_equal(n, 1L)
+  expect_true(file.exists(file.path(tmp, "dpo.jsonl")))
+  recs <- read_jsonl(file.path(tmp, "dpo.jsonl"))
+  expect_equal(recs[[1]]$rejected, "first draft")
+  expect_equal(recs[[1]]$chosen,   "second draft")
+})
+
+test_that("write_intermediate_pairs_from_log writes negative when confidence drops", {
+  tmp <- local_tempdir()
+  log <- list(
+    list(draft = "first draft",  confidence = 0.80),
+    list(draft = "second draft", confidence = 0.55)
+  )
+  n <- write_intermediate_pairs_from_log("S2e10", "p", log, .path = tmp)
+  expect_equal(n, 1L)
+  expect_true(file.exists(file.path(tmp, "negatives.jsonl")))
+  recs <- read_jsonl(file.path(tmp, "negatives.jsonl"))
+  expect_equal(recs[[1]]$draft, "second draft")
+  expect_equal(recs[[1]]$reject_reason, "revision_did_not_improve")
+})
+
+test_that("write_intermediate_pairs_from_log writes negative when confidence is flat", {
+  tmp <- local_tempdir()
+  log <- list(
+    list(draft = "first draft",  confidence = 0.70),
+    list(draft = "second draft", confidence = 0.70)
+  )
+  n <- write_intermediate_pairs_from_log("S2e10", "p", log, .path = tmp)
+  expect_equal(n, 1L)
+  expect_true(file.exists(file.path(tmp, "negatives.jsonl")))
+})
+
+test_that("write_intermediate_pairs_from_log skips identical drafts", {
+  tmp <- local_tempdir()
+  log <- list(
+    list(draft = "same draft", confidence = 0.55),
+    list(draft = "same draft", confidence = 0.80)
+  )
+  n <- write_intermediate_pairs_from_log("S2e10", "p", log, .path = tmp)
+  expect_equal(n, 0L)
+  expect_false(file.exists(file.path(tmp, "dpo.jsonl")))
+})
+
+test_that("write_intermediate_pairs_from_log skips entries missing draft or confidence", {
+  tmp <- local_tempdir()
+  log <- list(
+    list(draft = "first",  confidence = 0.55),
+    list(draft = NULL,     confidence = 0.80),
+    list(draft = "third",  confidence = NA_real_)
+  )
+  n <- write_intermediate_pairs_from_log("S2e10", "p", log, .path = tmp)
+  expect_equal(n, 0L)
+})
+
+test_that("write_intermediate_pairs_from_log walks multi-iteration logs pairwise", {
+  tmp <- local_tempdir()
+  log <- list(
+    list(draft = "v1", confidence = 0.50),
+    list(draft = "v2", confidence = 0.65),  # improved → DPO
+    list(draft = "v3", confidence = 0.55),  # dropped → negative
+    list(draft = "v4", confidence = 0.85)   # improved → DPO
+  )
+  n <- write_intermediate_pairs_from_log("S2e10", "p", log, .path = tmp)
+  expect_equal(n, 3L)
+  expect_length(read_jsonl(file.path(tmp, "dpo.jsonl")),       2L)
+  expect_length(read_jsonl(file.path(tmp, "negatives.jsonl")), 1L)
+})
+
+# --- generate_training_data with iteration_log ------------------------------
+
+test_that("generate_training_data writes intermediate DPO pairs from iteration_log", {
+  tmp_q <- local_tempdir()
+  tmp_t <- local_tempdir()
+  iter_log <- list(
+    list(draft = "draft_v1", confidence = 0.55, verdict = "flagged"),
+    list(draft = "draft_v2", confidence = 0.85, verdict = "approved")
+  )
+  iter_log_json <- jsonlite::toJSON(iter_log, auto_unbox = TRUE)
+
+  enqueue_review("draft_v2", make_verdict_list("approved", 0.85), "S2e10", "src",
+                 iteration_log = iter_log_json,
+                 .queue_path = tmp_q)
+  consolidate_queue(.queue_path = tmp_q)
+  resolve_item("S2e10", "accepted", .queue_path = tmp_q)
+  generate_training_data(.queue_path = tmp_q, .training_path = tmp_t)
+
+  expect_true(file.exists(file.path(tmp_t, "sft.jsonl")))     # the accepted draft
+  expect_true(file.exists(file.path(tmp_t, "dpo.jsonl")))     # the intermediate pair
+  recs <- read_jsonl(file.path(tmp_t, "dpo.jsonl"))
+  expect_equal(recs[[1]]$rejected, "draft_v1")
+  expect_equal(recs[[1]]$chosen,   "draft_v2")
+})
+
+test_that("generate_training_data tolerates missing or empty iteration_log", {
+  tmp_q <- local_tempdir()
+  tmp_t <- local_tempdir()
+  enqueue_review("d", make_verdict_list(), "S2e10", "s",
+                 iteration_log = "[]", .queue_path = tmp_q)
+  consolidate_queue(.queue_path = tmp_q)
+  resolve_item("S2e10", "accepted", .queue_path = tmp_q)
+  expect_no_error(
+    generate_training_data(.queue_path = tmp_q, .training_path = tmp_t)
+  )
+  expect_false(file.exists(file.path(tmp_t, "dpo.jsonl")))
+})
+
+# --- Step 3.2: Claude escalation source tagging -----------------------------
+
+test_that("write_dpo accepts and writes a source field when supplied", {
+  tmp <- local_tempdir()
+  write_dpo("S2e10", "p", "ch", "rej", source = "claude_escalation", .path = tmp)
+  rec <- read_jsonl(file.path(tmp, "dpo.jsonl"))[[1]]
+  expect_equal(rec$source, "claude_escalation")
+})
+
+test_that("write_dpo omits source field when source = NULL (backward compat)", {
+  tmp <- local_tempdir()
+  write_dpo("S2e10", "p", "ch", "rej", .path = tmp)
+  rec <- read_jsonl(file.path(tmp, "dpo.jsonl"))[[1]]
+  expect_null(rec$source)
+})
+
+test_that("intermediate revision DPO pair is tagged source='intermediate'", {
+  tmp <- local_tempdir()
+  log <- list(
+    list(draft = "v1", confidence = 0.55),
+    list(draft = "v2", confidence = 0.85)
+  )
+  write_intermediate_pairs_from_log("S2e10", "p", log, .path = tmp)
+  rec <- read_jsonl(file.path(tmp, "dpo.jsonl"))[[1]]
+  expect_equal(rec$source, "intermediate")
+})
+
+test_that("cap_hit Claude revision emits DPO with source='claude_escalation'", {
+  tmp <- local_tempdir()
+  log <- list(
+    list(draft = "ollama_v1", confidence = 0.50, model = "qwen3.5:9b"),
+    list(draft = "claude_revision", confidence = 0.90,
+         model = "claude (cap_hit escalation)",
+         escalation_reason = "cap_hit")
+  )
+  n <- write_intermediate_pairs_from_log("S2e10", "p", log, .path = tmp)
+  expect_equal(n, 1L)
+  rec <- read_jsonl(file.path(tmp, "dpo.jsonl"))[[1]]
+  expect_equal(rec$source,   "claude_escalation")
+  expect_equal(rec$rejected, "ollama_v1")
+  expect_equal(rec$chosen,   "claude_revision")
+})
+
+test_that("cap_hit pair picks highest-confidence Ollama draft as rejected", {
+  tmp <- local_tempdir()
+  log <- list(
+    list(draft = "ollama_v1", confidence = 0.55),
+    list(draft = "ollama_v2", confidence = 0.78),  # best Ollama
+    list(draft = "ollama_v3", confidence = 0.40),
+    list(draft = "claude_revision", confidence = 0.90,
+         escalation_reason = "cap_hit")
+  )
+  write_intermediate_pairs_from_log("S2e10", "p", log, .path = tmp)
+  recs <- read_jsonl(file.path(tmp, "dpo.jsonl"))
+  esc <- Filter(function(r) identical(r$source, "claude_escalation"), recs)
+  expect_length(esc, 1L)
+  expect_equal(esc[[1]]$rejected, "ollama_v2")
+  expect_equal(esc[[1]]$chosen,   "claude_revision")
+})
+
+test_that("cap_hit Claude with same draft as best Ollama emits no claude_escalation pair", {
+  tmp <- local_tempdir()
+  log <- list(
+    list(draft = "ollama_only", confidence = 0.60),
+    list(draft = "ollama_only", confidence = 0.85,    # Claude reviewed only
+         escalation_reason = "cap_hit")
+  )
+  n <- write_intermediate_pairs_from_log("S2e10", "p", log, .path = tmp)
+  expect_equal(n, 0L)
+  expect_false(file.exists(file.path(tmp, "dpo.jsonl")))
+})
+
+test_that("cap_hit Claude with NA draft emits no claude_escalation pair", {
+  tmp <- local_tempdir()
+  log <- list(
+    list(draft = "ollama_v1", confidence = 0.60),
+    list(draft = NA_character_, confidence = 0.85,
+         escalation_reason = "cap_hit")
+  )
+  n <- write_intermediate_pairs_from_log("S2e10", "p", log, .path = tmp)
+  expect_equal(n, 0L)
+})
+
+test_that("accepted_with_edit DPO is tagged source='human_edit'", {
+  tmp_q <- local_tempdir()
+  tmp_t <- local_tempdir()
+  enqueue_review("original", make_verdict_list(), "S2e10", "src", .queue_path = tmp_q)
+  consolidate_queue(.queue_path = tmp_q)
+  resolve_item("S2e10", "accepted_with_edit", edited_draft = "edited",
+               .queue_path = tmp_q)
+  generate_training_data(.queue_path = tmp_q, .training_path = tmp_t)
+  rec <- read_jsonl(file.path(tmp_t, "dpo.jsonl"))[[1]]
+  expect_equal(rec$source, "human_edit")
+})
+
+# --- Step 3.3: refresh_few_shots() ------------------------------------------
+
+# Helper: end-to-end set up an accepted record at a given confidence and run
+# generate_training_data so sft.jsonl gets populated.
+.seed_accepted <- function(section_id, confidence, draft, prompt_text,
+                           tmp_q, tmp_t) {
+  enqueue_review(draft,
+                 list(verdict = "approved", confidence = confidence,
+                      issues = list(), source_quotes = list()),
+                 section_id, "source text",
+                 prompt = prompt_text, .queue_path = tmp_q)
+  consolidate_queue(.queue_path = tmp_q)
+  resolve_item(section_id, "accepted", .queue_path = tmp_q)
+  generate_training_data(.queue_path = tmp_q, .training_path = tmp_t)
+}
+
+test_that("refresh_few_shots returns 0 when no sft.jsonl exists", {
+  tmp_q <- local_tempdir()
+  tmp_t <- local_tempdir()
+  # queue exists but no training data yet
+  enqueue_review("d", make_verdict_list(), "S2e10", "s", .queue_path = tmp_q)
+  consolidate_queue(.queue_path = tmp_q)
+  n <- refresh_few_shots(.queue_path = tmp_q, .training_path = tmp_t)
+  expect_equal(n, 0L)
+})
+
+test_that("refresh_few_shots returns 0 when queue.csv is missing", {
+  tmp_q <- local_tempdir()
+  tmp_t <- local_tempdir()
+  # Put a stray sft.jsonl but no queue
+  write_sft("S2e10", "p", "c", .path = tmp_t)
+  n <- refresh_few_shots(.queue_path = tmp_q, .training_path = tmp_t)
+  expect_equal(n, 0L)
+})
+
+test_that("refresh_few_shots writes pool of high-confidence accepted records", {
+  tmp_q <- local_tempdir()
+  tmp_t <- local_tempdir()
+  .seed_accepted("S2e10", 0.92, "completion-1", "prompt-1", tmp_q, tmp_t)
+  .seed_accepted("S2e11", 0.90, "completion-2", "prompt-2", tmp_q, tmp_t)
+  n <- refresh_few_shots(.queue_path = tmp_q, .training_path = tmp_t,
+                          confidence_threshold = 0.85)
+  expect_equal(n, 2L)
+  pool <- read_jsonl(file.path(tmp_t, "few_shots_pool.jsonl"))
+  expect_length(pool, 2L)
+  ids <- vapply(pool, function(r) r$section_id, character(1))
+  expect_setequal(ids, c("S2e10", "S2e11"))
+})
+
+test_that("refresh_few_shots respects confidence_threshold", {
+  tmp_q <- local_tempdir()
+  tmp_t <- local_tempdir()
+  .seed_accepted("HIGH", 0.95, "good", "prompt-h", tmp_q, tmp_t)
+  .seed_accepted("LOW",  0.60, "weak", "prompt-l", tmp_q, tmp_t)
+  n <- refresh_few_shots(.queue_path = tmp_q, .training_path = tmp_t,
+                          confidence_threshold = 0.85)
+  expect_equal(n, 1L)
+  pool <- read_jsonl(file.path(tmp_t, "few_shots_pool.jsonl"))
+  expect_equal(pool[[1]]$section_id, "HIGH")
+})
+
+test_that("refresh_few_shots caps output at n", {
+  tmp_q <- local_tempdir()
+  tmp_t <- local_tempdir()
+  for (i in 1:5) {
+    .seed_accepted(paste0("S", i), 0.90, paste0("c", i),
+                   paste0("p", i), tmp_q, tmp_t)
+  }
+  n <- refresh_few_shots(n = 3L, .queue_path = tmp_q, .training_path = tmp_t)
+  expect_equal(n, 3L)
+  pool <- read_jsonl(file.path(tmp_t, "few_shots_pool.jsonl"))
+  expect_length(pool, 3L)
+})
+
+test_that("refresh_few_shots prefers most recent records when capping", {
+  tmp_q <- local_tempdir()
+  tmp_t <- local_tempdir()
+  # Manually write SFT records with increasing created_at timestamps
+  records <- list(
+    list(type="sft", section_id="OLD",  prompt="p", completion="c-old",
+         created_at="2024-01-01T00:00:00"),
+    list(type="sft", section_id="MID",  prompt="p", completion="c-mid",
+         created_at="2025-01-01T00:00:00"),
+    list(type="sft", section_id="NEW",  prompt="p", completion="c-new",
+         created_at="2026-01-01T00:00:00")
+  )
+  dir.create(tmp_t, showWarnings = FALSE, recursive = TRUE)
+  for (r in records) {
+    cat(jsonlite::toJSON(r, auto_unbox = TRUE), "\n", sep = "",
+        file = file.path(tmp_t, "sft.jsonl"), append = TRUE)
+  }
+  # Build a queue.csv with all three at high confidence
+  q <- data.frame(
+    section_id = c("OLD","MID","NEW"),
+    confidence = c(0.95, 0.95, 0.95),
+    stringsAsFactors = FALSE
+  )
+  dir.create(tmp_q, showWarnings = FALSE, recursive = TRUE)
+  readr::write_csv(q, file.path(tmp_q, "queue.csv"))
+
+  refresh_few_shots(n = 1L, .queue_path = tmp_q, .training_path = tmp_t)
+  pool <- read_jsonl(file.path(tmp_t, "few_shots_pool.jsonl"))
+  expect_length(pool, 1L)
+  expect_equal(pool[[1]]$section_id, "NEW")
+})
+
+test_that("refresh_few_shots overwrites the pool file on each run", {
+  tmp_q <- local_tempdir()
+  tmp_t <- local_tempdir()
+  .seed_accepted("S1", 0.90, "c1", "p1", tmp_q, tmp_t)
+  refresh_few_shots(.queue_path = tmp_q, .training_path = tmp_t)
+  expect_length(read_jsonl(file.path(tmp_t, "few_shots_pool.jsonl")), 1L)
+
+  .seed_accepted("S2", 0.90, "c2", "p2", tmp_q, tmp_t)
+  refresh_few_shots(.queue_path = tmp_q, .training_path = tmp_t)
+  pool <- read_jsonl(file.path(tmp_t, "few_shots_pool.jsonl"))
+  expect_length(pool, 2L)  # not 3L; pool was rewritten, not appended
+})

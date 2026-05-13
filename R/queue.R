@@ -20,7 +20,14 @@ library(fs)
     merged_into        = NA_character_,
     last_action_at     = NA_character_,
     dismissed_findings = NA_character_,
-    slug_override      = NA_character_
+    slug_override      = NA_character_,
+    user_feedback      = NA_character_,
+    regen_count        = 0L,
+    reject_reason      = NA_character_,
+    # Recursive critic loop columns — default for rows written before Phase 0
+    iteration_count    = 1L,
+    claude_used        = FALSE,
+    iteration_log      = "[]"
   )
   for (col in names(defaults)) {
     if (!col %in% names(df)) df[[col]] <- defaults[[col]]
@@ -36,6 +43,9 @@ enqueue_review <- function(draft, verdict_list, section_id, source_text,
                            source_episode_ids = NA_character_,
                            existing_note      = NA_character_,
                            status             = "pending",
+                           iteration_count    = 1L,
+                           claude_used        = FALSE,
+                           iteration_log      = "[]",
                            .queue_path        = REVIEW_QUEUE_PATH) {
   dir_create(file.path(.queue_path, "staging"), recurse = TRUE)
 
@@ -78,6 +88,9 @@ enqueue_review <- function(draft, verdict_list, section_id, source_text,
     status_detail      = NA_character_,
     merged_into        = NA_character_,
     last_action_at     = NA_character_,
+    iteration_count    = as.integer(iteration_count),
+    claude_used        = isTRUE(claude_used),
+    iteration_log      = as.character(iteration_log),
     stringsAsFactors   = FALSE
   )
 
@@ -122,7 +135,11 @@ read_queue <- function(.queue_path = REVIEW_QUEUE_PATH, status = "pending") {
       note_type = character(), entity_name = character(),
       chunk_count = integer(), source_episode_ids = character(),
       status_detail = character(), merged_into = character(),
-      last_action_at = character(), stringsAsFactors = FALSE
+      last_action_at = character(), user_feedback = character(),
+      regen_count = integer(),
+      iteration_count = integer(), claude_used = logical(),
+      iteration_log = character(),
+      stringsAsFactors = FALSE
     ))
   }
   df <- read_csv(csv_path, show_col_types = FALSE)
@@ -133,6 +150,7 @@ read_queue <- function(.queue_path = REVIEW_QUEUE_PATH, status = "pending") {
 
 resolve_item <- function(section_id, resolution, edited_draft = NULL,
                          status_detail = NULL, merged_into = NULL,
+                         reject_reason = NULL,
                          .queue_path = REVIEW_QUEUE_PATH) {
   VALID_RESOLUTIONS <- c(
     "accepted", "accepted_with_edit", "rejected",
@@ -152,9 +170,10 @@ resolve_item <- function(section_id, resolution, edited_draft = NULL,
   df$status[idx]          <- resolution
   df$resolved_at[idx]     <- now
   df$last_action_at[idx]  <- now
-  if (!is.null(edited_draft)) df$final_draft[idx]    <- edited_draft
-  if (!is.null(status_detail)) df$status_detail[idx] <- status_detail
-  if (!is.null(merged_into))  df$merged_into[idx]    <- merged_into
+  if (!is.null(edited_draft))  df$final_draft[idx]    <- edited_draft
+  if (!is.null(status_detail)) df$status_detail[idx]  <- status_detail
+  if (!is.null(merged_into))   df$merged_into[idx]    <- merged_into
+  if (!is.null(reject_reason)) df$reject_reason[idx]  <- reject_reason
 
   write_csv(df, csv_path)
   invisible(resolution)
@@ -231,6 +250,98 @@ merge_queue_items <- function(absorbed_id, target_id, .queue_path = REVIEW_QUEUE
 
   write_csv(df, csv_path)
   invisible(df)
+}
+
+# ---------------------------------------------------------------------------
+# Regeneration queue helpers
+# ---------------------------------------------------------------------------
+
+queue_for_regen <- function(section_id, user_feedback = NA_character_,
+                             .queue_path = REVIEW_QUEUE_PATH) {
+  csv_path <- .queue_csv_path(.queue_path)
+  df  <- read_csv(csv_path, show_col_types = FALSE)
+  df  <- .fill_missing_columns(df)
+  idx <- which(df$section_id == section_id)
+  if (length(idx) == 0) stop("section_id not found: ", section_id)
+
+  current_count <- if (is.na(df$regen_count[idx])) 0L else as.integer(df$regen_count[idx])
+  if (current_count >= REGEN_MAX_COUNT) stop("regen_cap_exceeded")
+
+  now <- format(Sys.time(), "%Y-%m-%dT%H:%M:%S")
+  df$status[idx]         <- "regen_queued"
+  df$user_feedback[idx]  <- if (!is.null(user_feedback) && length(user_feedback) == 1 &&
+                                  !is.na(user_feedback) && nzchar(trimws(user_feedback)))
+                               as.character(user_feedback) else NA_character_
+  df$last_action_at[idx] <- now
+
+  write_csv(df, csv_path)
+  invisible(section_id)
+}
+
+start_regen_job <- function(project_root, .queue_path = REVIEW_QUEUE_PATH) {
+  csv_path <- .queue_csv_path(.queue_path)
+  df  <- read_csv(csv_path, show_col_types = FALSE)
+  df  <- .fill_missing_columns(df)
+
+  queued_ids <- df$section_id[df$status == "regen_queued"]
+  if (length(queued_ids) == 0) return(invisible(NULL))
+
+  now <- format(Sys.time(), "%Y-%m-%dT%H:%M:%S")
+  df$status[df$status == "regen_queued"]                  <- "regenerating"
+  df$last_action_at[df$section_id %in% queued_ids]        <- now
+  write_csv(df, csv_path)
+
+  lock_path <- file.path(project_root, REGEN_LOCK_FILE)
+  writeLines(character(0), lock_path)
+
+  log_path <- file.path(project_root, "review_queue", "regen.log")
+  handle <- callr::r_bg(
+    func = function(project_root, queue_csv_abs) {
+      setwd(project_root)
+      source("config.R")
+      source("R/queue.R")
+      source("R/ollama.R")
+      source("R/claude.R")
+      source("R/extract.R")
+      source("R/regen.R")
+      regen_worker(queue_csv_abs)
+    },
+    args    = list(project_root = project_root, queue_csv_abs = normalizePath(csv_path)),
+    stdout  = log_path,
+    stderr  = "2>&1",
+    supervise = TRUE
+  )
+  handle
+}
+
+update_regen_result <- function(section_id, new_draft, new_verdict_list = NULL,
+                                 .queue_path = REVIEW_QUEUE_PATH) {
+  csv_path <- .queue_csv_path(.queue_path)
+  df  <- read_csv(csv_path, show_col_types = FALSE)
+  df  <- .fill_missing_columns(df)
+  idx <- which(df$section_id == section_id)
+  if (length(idx) == 0) stop("section_id not found: ", section_id)
+
+  current_count <- if (is.na(df$regen_count[idx])) 0L else as.integer(df$regen_count[idx])
+
+  now <- format(Sys.time(), "%Y-%m-%dT%H:%M:%S")
+  df$draft[idx]          <- new_draft
+  df$status[idx]         <- "pending"
+  df$regen_count[idx]    <- current_count + 1L
+  df$last_action_at[idx] <- now
+  df$user_feedback[idx]  <- NA_character_
+
+  if (!is.null(new_verdict_list)) {
+    df$verdict[idx]          <- new_verdict_list$verdict
+    df$confidence[idx]       <- new_verdict_list$confidence
+    df$issues[idx]           <- toJSON(if (is.null(new_verdict_list$issues)) list()
+                                        else new_verdict_list$issues, auto_unbox = TRUE)
+    df$source_quotes[idx]    <- toJSON(if (is.null(new_verdict_list$source_quotes)) list()
+                                        else new_verdict_list$source_quotes, auto_unbox = TRUE)
+  }
+
+  write_csv(df, csv_path)
+  invisible(section_id)
 }
 
 update_dismissed_findings <- function(section_id, finding_idx,

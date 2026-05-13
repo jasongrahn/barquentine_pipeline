@@ -95,6 +95,40 @@ test_that("note_exists returns TRUE after write_note creates the file", {
   expect_true(note_exists("npcs/Basil.md", dry_run = TRUE, .dry_run_path = tmp))
 })
 
+# --- write_placeholder_note() ------------------------------------------------
+
+test_that("write_placeholder_note writes a file at sessions/{session_id}.md", {
+  tmp <- local_tempdir()
+  result <- write_placeholder_note("s01e07", dry_run = TRUE, .dry_run_path = tmp)
+  expect_true(file.exists(file.path(tmp, "sessions", "s01e07.md")))
+})
+
+test_that("write_placeholder_note frontmatter contains gap: true and session id", {
+  tmp <- local_tempdir()
+  write_placeholder_note("s01e07", dry_run = TRUE, .dry_run_path = tmp)
+  content <- read_file(file.path(tmp, "sessions", "s01e07.md"))
+  expect_true(grepl("gap: true", content, fixed = TRUE))
+  expect_true(grepl("session: s01e07", content, fixed = TRUE))
+  expect_true(grepl("type: session_note", content, fixed = TRUE))
+})
+
+test_that("write_placeholder_note body matches the design spec", {
+  tmp <- local_tempdir()
+  write_placeholder_note("s02e07", dry_run = TRUE, .dry_run_path = tmp)
+  content <- read_file(file.path(tmp, "sessions", "s02e07.md"))
+  expect_true(grepl("No session notes available for s02e07.", content, fixed = TRUE))
+})
+
+test_that("write_placeholder_note errors when a real note already exists", {
+  tmp <- local_tempdir()
+  write_note("real notes", file.path("sessions", "s01e07.md"),
+             dry_run = TRUE, .dry_run_path = tmp)
+  expect_error(
+    write_placeholder_note("s01e07", dry_run = TRUE, .dry_run_path = tmp),
+    regexp = "already exists"
+  )
+})
+
 # --- Safety: no destructive operations in writer.R ---------------------------
 
 test_that("writer.R contains no destructive file or directory operations", {

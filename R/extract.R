@@ -12,8 +12,18 @@ load_campaign_facts <- function(path = "config/campaign_facts.md") {
   paste(readLines(path, warn = FALSE), collapse = "\n")
 }
 
-session_prompt <- function(episode_id, section_text, few_shot_paths = NULL) {
+session_prompt <- function(episode_id, section_text, few_shot_paths = NULL,
+                           story_so_far = NULL) {
   few_shot_block <- .build_few_shot_block(few_shot_paths)
+  story_block    <- if (!is.null(story_so_far) && nzchar(trimws(story_so_far))) {
+    paste0(
+      "CAMPAIGN CONTEXT — Story So Far (use only to avoid contradictions; ",
+      "do not add details from here that are absent in the source text below):\n",
+      story_so_far, "\n\n"
+    )
+  } else {
+    ""
+  }
   glue(
 "You are building an Obsidian markdown wiki for a D&D 5e Spelljammer campaign called Barquentine.
 
@@ -29,7 +39,7 @@ RULES — follow exactly:
 7. Output only the markdown note. No explanation, no preamble, no code fences.
 8. The source text is an automated transcript and may contain garbled, split, or misheard words. Do not guess or correct them — write [unclear] in place of any word or phrase you cannot confidently interpret from context.
 
-{few_shot_block}SOURCE TEXT (episode: {episode_id}):
+{story_block}{few_shot_block}SOURCE TEXT (episode: {episode_id}):
 {section_text}
 
 OUTPUT FORMAT:
@@ -66,11 +76,14 @@ review_required: false
 
 generate_note <- function(episode_id, section_text,
                           few_shot_paths = NULL,
+                          story_so_far   = NULL,
                           model       = OLLAMA_MODEL,
                           base_url    = OLLAMA_BASE_URL,
                           num_predict = 2400L) {
   if (is_sparse(section_text)) return(NULL)
-  prompt <- session_prompt(episode_id, section_text, few_shot_paths = few_shot_paths)
+  prompt <- session_prompt(episode_id, section_text,
+                           few_shot_paths = few_shot_paths,
+                           story_so_far   = story_so_far)
   ollama_generate(prompt, GENERATOR_SYSTEM_PROMPT, model = model, base_url = base_url,
                   options = list(num_predict = num_predict))
 }
@@ -104,6 +117,278 @@ generate_note <- function(episode_id, section_text,
          paste(shots, collapse = "\n\n---\n\n"),
          "\n--- END EXAMPLES ---\n\n")
 }
+
+revise_note <- function(draft, issues, quotes, source_text,
+                        model    = OLLAMA_MODEL,
+                        base_url = OLLAMA_BASE_URL) {
+  issues_block <- if (length(issues) > 0)
+    paste0("ISSUES TO CORRECT:\n", paste0("- ", unlist(issues), collapse = "\n"))
+  else
+    "ISSUES TO CORRECT:\n(none specified)"
+
+  quotes_block <- if (length(quotes) > 0)
+    paste0("SOURCE QUOTES GROUNDING THESE ISSUES:\n",
+           paste0("> ", unlist(quotes), collapse = "\n"))
+  else
+    "SOURCE QUOTES GROUNDING THESE ISSUES:\n(none provided)"
+
+  prompt <- paste0(
+    "SOURCE TEXT:\n", source_text,
+    "\n\n", quotes_block,
+    "\n\n", issues_block,
+    "\n\nDRAFT TO REVISE:\n", draft,
+    "\n\nRevise the draft above. ",
+    "Correct the specific issues listed below. ",
+    "You may rephrase immediately surrounding sentences for readability, ",
+    "but do not add new facts, remove sections, ",
+    "or change anything not adjacent to a listed issue. ",
+    "Output only the revised markdown note with no explanation or preamble."
+  )
+
+  result <- ollama_generate(prompt, GENERATOR_SYSTEM_PROMPT,
+                             model    = model,
+                             base_url = base_url,
+                             think    = FALSE)
+
+  # Propagate timeout sentinel so draft_with_refinement() can detect it
+  if (is.list(result) && isTRUE(result$timed_out)) return(result)
+  result
+}
+
+# Verdict tier ranking for select_best_draft(). approved beats flagged beats
+# rejected; parse_error and skipped iterations are not selectable.
+.verdict_tier <- function(v) {
+  switch(v %||% "",
+    approved = 3L,
+    flagged  = 2L,
+    rejected = 1L,
+    0L
+  )
+}
+
+# Pick the iteration whose draft we surface to the reviewer.
+# Rule: highest verdict tier wins (approved > flagged > rejected). Within tier,
+# fewest issues wins; final tiebreak is the latest iteration (the loop is
+# supposed to be improving the draft, so trust later passes).
+# parse_error / skipped iterations are not selectable. If every iteration is
+# parse_error / skipped, fall back to the latest iteration that has a draft.
+select_best_draft <- function(iteration_log) {
+  if (length(iteration_log) == 0L) {
+    return(list(draft = NULL, entry = NULL, iteration = NA_integer_))
+  }
+
+  has_draft <- function(e) is.character(e$draft) && nzchar(e$draft) && !is.na(e$draft)
+  candidates <- Filter(function(e) has_draft(e) && .verdict_tier(e$verdict) > 0L,
+                       iteration_log)
+
+  if (length(candidates) == 0L) {
+    fallback <- NULL
+    for (e in iteration_log) if (has_draft(e)) fallback <- e
+    if (is.null(fallback)) return(list(draft = NULL, entry = NULL, iteration = NA_integer_))
+    return(list(draft = fallback$draft, entry = fallback,
+                iteration = fallback$iteration %||% NA_integer_))
+  }
+
+  max_tier   <- max(vapply(candidates, function(e) .verdict_tier(e$verdict), integer(1)))
+  candidates <- Filter(function(e) .verdict_tier(e$verdict) == max_tier, candidates)
+
+  best <- candidates[[1L]]
+  for (e in candidates[-1L]) {
+    e_iss  <- e$issues_count    %||% 0L
+    b_iss  <- best$issues_count %||% 0L
+    e_iter <- e$iteration       %||% 0L
+    b_iter <- best$iteration    %||% 0L
+    if (e_iss < b_iss || (e_iss == b_iss && e_iter > b_iter)) best <- e
+  }
+
+  list(draft = best$draft, entry = best,
+       iteration = best$iteration %||% NA_integer_)
+}
+
+draft_with_refinement <- function(source_text, section_id, note_type = "session",
+                                   few_shot_paths  = NULL,
+                                   story_so_far    = NULL,
+                                   entity_name     = NULL,
+                                   source_passages = NULL,
+                                   prior_draft     = NULL,
+                                   model           = OLLAMA_MODEL,
+                                   base_url        = OLLAMA_BASE_URL) {
+  # Ensure temp dir exists for per-iteration checkpoints
+  dir.create("temp", showWarnings = FALSE, recursive = FALSE)
+
+  # Degraded-Ollama guard: scoped to this invocation only
+  ollama_critic_degraded <- FALSE
+  had_timeout            <- FALSE
+
+  iteration_log      <- list()
+  claude_used        <- FALSE
+  escalation_reason  <- NULL
+  iter               <- 0L  # log/sequence number; increments every loop turn
+  useful_iters       <- 0L  # critic responses that counted toward the cap
+  parse_retry_budget <- DRAFT_PARSE_RETRY_BUDGET
+  cap_hit            <- FALSE
+
+  while (useful_iters < DRAFT_MAX_ITERATIONS) {
+    iter <- iter + 1L
+
+    # --- Generate or revise ---
+    if (iter == 1L) {
+      draft <- if (note_type == "session") {
+        generate_note(section_id, source_text,
+                      few_shot_paths = few_shot_paths,
+                      story_so_far   = story_so_far,
+                      model = model, base_url = base_url)
+      } else {
+        generate_entity_note(
+          entity_name     = entity_name,
+          source_passages = source_passages %||% list(source_text),
+          note_type       = note_type,
+          model           = model,
+          base_url        = base_url,
+          prior_draft     = prior_draft
+        )
+      }
+    } else {
+      last_verdict <- iteration_log[[iter - 1L]]
+      draft <- revise_note(draft, last_verdict$issues, last_verdict$source_quotes,
+                           source_text, model = model, base_url = base_url)
+      if (is.list(draft) && isTRUE(draft$timed_out)) {
+        # Timeout: fall back to the previous iteration's draft so the critic
+        # has something to review and the loop can escalate to Claude.
+        draft <- last_verdict$draft
+      }
+    }
+
+    # Write iteration checkpoint
+    temp_path <- file.path("temp", paste0(section_id, "_iter_", iter, ".md"))
+    if (!is.null(draft) && is.character(draft)) {
+      writeLines(draft, temp_path)
+    }
+
+    # --- Critic call: route to Claude if Ollama is degraded ---
+    verdict <- if (ollama_critic_degraded) {
+      claude_review_note(draft, source_text)
+    } else {
+      review_note(draft, source_text)
+    }
+
+    # Handle timeout sentinel from review_note()
+    if (is.list(verdict) && isTRUE(verdict$timed_out)) {
+      ollama_critic_degraded <- TRUE
+      had_timeout            <- TRUE
+      escalation_reason      <- "ollama_timeout"
+      verdict                <- claude_review_note(draft, source_text)
+    }
+
+    # Normalize fields that may be missing
+    v_verdict    <- verdict$verdict    %||% "parse_error"
+    v_confidence <- if (is.null(verdict$confidence) || is.na(verdict$confidence)) 0 else verdict$confidence
+    v_issues     <- if (is.null(verdict$issues)) list() else verdict$issues
+    v_quotes     <- if (is.null(verdict$source_quotes)) list() else verdict$source_quotes
+    escalated    <- isTRUE(verdict$escalated) || ollama_critic_degraded
+
+    log_entry <- list(
+      section_id          = section_id,
+      iteration           = iter,
+      model               = model,
+      verdict             = v_verdict,
+      confidence          = v_confidence,
+      issues_count        = length(v_issues),
+      issues              = v_issues,
+      source_quotes       = v_quotes,
+      draft               = if (is.character(draft)) draft else NA_character_,
+      escalated_to_claude = escalated,
+      escalation_reason   = if (escalated && !is.null(escalation_reason))
+                              escalation_reason else NULL,
+      timestamp           = Sys.time()
+    )
+    iteration_log <- c(iteration_log, list(log_entry))
+
+    # parse_error iterations don't count toward the cap until the retry budget
+    # is exhausted. The iteration is still logged (so we can debug parse
+    # failures), but the loop gets another turn to produce a real verdict.
+    if (v_verdict == "parse_error" && parse_retry_budget > 0L) {
+      parse_retry_budget <- parse_retry_budget - 1L
+      next
+    }
+
+    useful_iters <- useful_iters + 1L
+
+    if (v_verdict == "approved") break
+    if (useful_iters >= DRAFT_MAX_ITERATIONS) {
+      cap_hit <- TRUE
+      break
+    }
+  }
+
+  # On cap hit with no approval: Claude reviews the current best draft.
+  # Note: Claude does not generate a new draft here; it provides an
+  # authoritative verdict on the best Ollama draft. The cap_entry carries
+  # that draft text so select_best_draft() can promote it if Claude approves.
+  if (cap_hit && iteration_log[[length(iteration_log)]]$verdict != "approved") {
+    pre_claude_best  <- select_best_draft(iteration_log)
+    cap_verdict      <- claude_review_note(pre_claude_best$draft, source_text)
+    claude_used      <- TRUE
+    escalation_reason <- if (is.null(escalation_reason)) "cap_hit" else escalation_reason
+
+    c_verdict    <- cap_verdict$verdict    %||% "parse_error"
+    c_confidence <- if (is.null(cap_verdict$confidence) || is.na(cap_verdict$confidence))
+                      0 else cap_verdict$confidence
+    c_issues     <- if (is.null(cap_verdict$issues)) list() else cap_verdict$issues
+    c_quotes     <- if (is.null(cap_verdict$source_quotes)) list() else cap_verdict$source_quotes
+
+    cap_entry <- list(
+      section_id          = section_id,
+      iteration           = length(iteration_log) + 1L,
+      model               = "claude (cap_hit escalation)",
+      verdict             = c_verdict,
+      confidence          = c_confidence,
+      issues_count        = length(c_issues),
+      issues              = c_issues,
+      source_quotes       = c_quotes,
+      draft               = if (is.character(pre_claude_best$draft))
+                              pre_claude_best$draft else NA_character_,
+      escalated_to_claude = TRUE,
+      escalation_reason   = "cap_hit",
+      timestamp           = Sys.time()
+    )
+    iteration_log <- c(iteration_log, list(cap_entry))
+  }
+
+  # Clean up temp files on successful completion
+  for (i in seq_len(length(iteration_log))) {
+    p <- file.path("temp", paste0(section_id, "_iter_", i, ".md"))
+    if (file.exists(p)) file.remove(p)
+  }
+
+  # Pick the draft to surface and the verdict that applies to it.
+  best <- select_best_draft(iteration_log)
+  best_entry <- best$entry
+
+  # Strip per-iter issue payloads from log before returning to keep
+  # iteration_log JSON small. final_verdict (returned separately) keeps them
+  # so the router can write them to queue.csv.
+  public_log <- lapply(iteration_log, function(e) {
+    e$issues        <- NULL
+    e$source_quotes <- NULL
+    e
+  })
+
+  list(
+    best_draft        = best$draft,
+    best_confidence   = if (is.null(best_entry)) -Inf else (best_entry$confidence %||% 0),
+    best_iteration    = best$iteration,
+    final_verdict     = if (is.null(best_entry))
+                          iteration_log[[length(iteration_log)]] else best_entry,
+    iteration_log     = public_log,
+    iteration_count   = length(iteration_log),
+    claude_used       = claude_used,
+    escalation_reason = escalation_reason
+  )
+}
+
+# Null-coalescing helper (base R)
+`%||%` <- function(x, y) if (is.null(x)) y else x
 
 .regen_context_block <- function(prior_draft, critic_findings, user_feedback) {
   parts <- character(0)

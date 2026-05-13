@@ -53,3 +53,18 @@ R/.claude/
 # Phase 2 runtime directories (local only, not source code)
 /review_queue/
 training_data/
+
+# Claude Code local state (settings, scheduled tasks, worktrees)
+.claude/
+
+# Per-iteration draft checkpoints written by draft_with_refinement()
+/temp/
+
+# Registry CSV auto-backups
+config/*.bak
+
+# Agentic-pipeline user-upload sandbox (superseded by agents/wiki_skills/)
+agents/mnt/
+
+# tar_make output logs
+/logs/

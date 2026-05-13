@@ -18,7 +18,7 @@ VAULT_PATH <- "/Users/jasongrahn/R-projects/barquentine_wiki/BarquentineWiki"
 # Files live directly in /Volumes/share/videos/ with no subdirectory
 NAS_MOUNT     <- "/Volumes/share/videos"
 VTT_EXTENSION <- "\\.vtt$"          # regex pattern for listing VTT files
-VTT_CUTOVER   <- "s2e34"            # first episode with a VTT file (lowercase for matching)
+VTT_CUTOVER   <- "s02e34"           # first episode with a VTT file (zero-padded format)
 
 # -----------------------------------------------------------------------------
 # Google Drive
@@ -82,13 +82,43 @@ TRAINING_DATA_PATH <- "training_data"
 # Pipeline state
 # -----------------------------------------------------------------------------
 # Update CURRENT_SESSION before each run
-CURRENT_SESSION <- "S2e42"           # ← update this each session
+CURRENT_SESSION <- "s02e36"          # ← update this each session (s01e01 zero-padded format)
 
 # Set TRUE to write to /tmp/barquentine-preview/ instead of vault
 # Always do a dry run first when testing new extraction prompts
-DRY_RUN         <- FALSE            # ← flip to FALSE when ready for live run
+DRY_RUN         <- FALSE             # ← flip to FALSE when ready for live run
 DRY_RUN_PATH    <- "/tmp/barquentine-preview"
+
+# -----------------------------------------------------------------------------
+# Recursive critic loop
+# -----------------------------------------------------------------------------
+DRAFT_MAX_ITERATIONS          <- 6L   # generator→critic loops before Claude escalation
+DRAFT_PARSE_RETRY_BUDGET      <- 2L   # parse_error retries that do NOT count toward the cap
+PROCESS_ONE_SESSION           <- FALSE # TEMP for s02e09 validation pass; restore to TRUE after
+OLLAMA_TIMEOUT_BACKOFF_SECONDS <- 30L  # sleep after a section that had an Ollama timeout
+
+# -----------------------------------------------------------------------------
+# Regeneration queue
+# -----------------------------------------------------------------------------
+REGEN_MAX_COUNT <- 3L                          # hard stop after this many regens per item
+REGEN_LOCK_FILE <- "review_queue/.regen.lock"  # sentinel touched by bg job; relative to project root
 
 # VTT episodes to process in Phase 3. NULL = all confirmed episodes.
 # Set to a character vector to limit the run, e.g. c("S2e34") for one episode.
 ACTIVE_EPISODES <- NULL
+
+# -----------------------------------------------------------------------------
+# Agentic VTT extraction (Phase 0 — session-notes-only)
+# -----------------------------------------------------------------------------
+# Per-session opt-in. Episodes in this vector run the new agentic extraction
+# flow: per-chunk schema-enforced extraction + R-assembled markdown + a single
+# LLM Synopsis call. For these episodes the Google-Doc prep flow (source_b)
+# redirects its output to vault/dm_prep/<id>.md so the VTT recap remains
+# canonical at vault/sessions/<id>.md.
+# Episodes NOT in this vector run the existing critic-loop path unchanged.
+AGENTIC_VTT_SESSION_IDS  <- c("s02e34", "s02e35", "s02e36")
+
+AGENTIC_CHUNK_SIZE_LINES <- 50L                                # dialogue lines per chunk (~800-1000 words)
+AGENTIC_EVENT_KEEP_N     <- 18L                                # events kept after prune_events scoring
+AGENTIC_DIALOGUE_KEEP_N  <- 8L                                 # significant-dialogue cap
+AGENTIC_OUTPUT_DIR       <- "review_queue/agentic_intermediates"

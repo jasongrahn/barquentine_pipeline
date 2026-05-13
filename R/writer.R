@@ -24,6 +24,18 @@ write_note <- function(content, relative_path, dry_run = DRY_RUN, overwrite = FA
   invisible(full_path)
 }
 
+write_placeholder_note <- function(session_id, dry_run = DRY_RUN,
+                                   .dry_run_path = DRY_RUN_PATH,
+                                   .vault_path   = VAULT_PATH) {
+  content <- paste0(
+    "---\ntype: session_note\nsession: ", session_id, "\ngap: true\n---\n\n",
+    "No session notes available for ", session_id, ".\n"
+  )
+  relative_path <- file.path("sessions", paste0(session_id, ".md"))
+  write_note(content, relative_path, dry_run = dry_run, overwrite = FALSE,
+             .dry_run_path = .dry_run_path, .vault_path = .vault_path)
+}
+
 note_exists <- function(relative_path, dry_run = DRY_RUN,
                         .dry_run_path = DRY_RUN_PATH,
                         .vault_path   = VAULT_PATH) {

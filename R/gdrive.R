@@ -24,7 +24,7 @@ list_folder_docs <- function(folder_id) {
 
   episode_ids <- vapply(matches, function(m) {
     if (length(m) < 3L || !nzchar(m[[1L]])) return(NA_character_)
-    paste0("S", m[[2L]], "e", m[[3L]])
+    sprintf("s%02de%02d", as.integer(m[[2L]]), as.integer(m[[3L]]))
   }, character(1L))
 
   data.frame(

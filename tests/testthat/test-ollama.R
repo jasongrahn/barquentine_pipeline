@@ -173,3 +173,32 @@ test_that(".build_ollama_request includes think field only when explicitly set",
 test_that("ollama_generate think defaults to NULL (omits field from body by default)", {
   expect_null(formals(ollama_generate)$think)
 })
+
+# --- Timeout sentinel ---------------------------------------------------------
+
+test_that("ollama_generate returns timed_out sentinel on httr2_error", {
+  # Simulate a curl/network timeout by throwing an httr2_error from the mock
+  local_mocked_responses(function(req) {
+    cond <- structure(
+      list(message = "Timeout was reached", call = NULL),
+      class = c("httr2_error", "error", "condition")
+    )
+    stop(cond)
+  })
+  result <- ollama_generate("p", "s", model = "m", base_url = "http://localhost:11434")
+  expect_true(is.list(result))
+  expect_true(isTRUE(result$timed_out))
+  expect_null(result$verdict)
+})
+
+test_that("ollama_generate timeout sentinel has exact structure list(timed_out=TRUE, verdict=NULL)", {
+  local_mocked_responses(function(req) {
+    cond <- structure(
+      list(message = "simulated timeout", call = NULL),
+      class = c("httr2_error", "error", "condition")
+    )
+    stop(cond)
+  })
+  result <- ollama_generate("p", "s", model = "m", base_url = "http://localhost:11434")
+  expect_identical(result, list(timed_out = TRUE, verdict = NULL))
+})

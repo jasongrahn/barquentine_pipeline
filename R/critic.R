@@ -104,5 +104,9 @@ review_note <- function(draft, source, model = OLLAMA_CRITIC_MODEL,
                          format   = CRITIC_RESPONSE_SCHEMA,
                          think    = FALSE)
 
+  # Propagate the timeout sentinel from ollama_generate() directly.
+  # draft_with_refinement() checks for timed_out = TRUE to trigger Claude escalation.
+  if (is.list(raw) && isTRUE(raw$timed_out)) return(raw)
+
   parse_critic_response(raw)
 }
