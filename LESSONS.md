@@ -99,6 +99,13 @@ When porting a filter across chains, ask: "is this a *presentation* rule (recap 
 ### Edit-distance slug collapse is location-only
 `R/postprocess_shared.R::collapse_near_match_slugs()` uses `utils::adist()` + union-find to merge near-typo slugs. The entity chain (and the agentic chain's `collapse_near_match_locations`) apply it **only to `note_type == "location"` records**. NPCs and factions have personal names where small edit distances are too noisy ("Cletus" vs "Cletas" must not auto-merge without reviewer judgment). Locations are typo-tolerant in practice.
 
+### APS model (`gurubot/gemma-2b-aps-it:Q4_K_M`) output format
+Output starts with `: PROPOSITIONS:\n<s>\n`, then hyphen-bullet lines, ends with `</s>`. At 3000–7500 words input, model produces ~8 propositions and stops. Not a timeout — just low output volume. Strip the header and sentinel before splitting on newlines.
+
+Proposition content reflects surface utterances verbatim, not structured facts. Identity confusion present: if two characters share a passage the model may emit propositions attributed to the wrong one. APS is useful as a grounding filter, not a fact oracle.
+
+`regex(claim, ignore_case=TRUE)` in `str_detect()` uses claim text as a regex pattern. Claims from draft sentences may contain `()`, `.`, `?` — these are valid regex but match broadly. Acceptable for grounding; do not use for exact equality checks.
+
 ### Transcription artifacts in source text
 Source text comes from automated transcripts and will contain garbled, split, or misheard words. The generator prompt must instruct the model to write `[unclear]` rather than guess — otherwise it invents plausible-sounding but fabricated content, violating the no-fabrication rule. Reviewers in the Shiny UI should treat `[unclear]` markers as expected, not as model failures.
 
