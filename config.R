@@ -82,7 +82,7 @@ TRAINING_DATA_PATH <- "training_data"
 # Pipeline state
 # -----------------------------------------------------------------------------
 # Update CURRENT_SESSION before each run
-CURRENT_SESSION <- "s02e36"          # ← update this each session (s01e01 zero-padded format)
+CURRENT_SESSION <- "s02e37"          # ← update this each session (s01e01 zero-padded format)
 
 # Set TRUE to write to /tmp/barquentine-preview/ instead of vault
 # Always do a dry run first when testing new extraction prompts
@@ -116,7 +116,15 @@ ACTIVE_EPISODES <- NULL
 # redirects its output to vault/dm_prep/<id>.md so the VTT recap remains
 # canonical at vault/sessions/<id>.md.
 # Episodes NOT in this vector run the existing critic-loop path unchanged.
-AGENTIC_VTT_SESSION_IDS  <- c("s02e34", "s02e35", "s02e36")
+AGENTIC_VTT_SESSION_IDS  <- c("s02e34", "s02e35", "s02e36", "s02e37")
+
+# --- Phase 4.2: agentic entity-note chain opt-in --------------------------
+# Add episode IDs here to run entity notes through schema-enforced extraction
+# instead of the legacy critic-loop path. Start empty; Phase 4.1 adds first ID.
+AGENTIC_ENTITY_SESSION_IDS        <- c("s02e37")
+AGENTIC_ENTITY_SCHEMA_VERSION     <- "v1"
+AGENTIC_ENTITY_PASSAGE_WORD_LIMIT <- 4000L
+AGENTIC_ENTITY_MODEL              <- OLLAMA_MODEL
 
 AGENTIC_CHUNK_SIZE_LINES <- 50L                                # dialogue lines per chunk (~800-1000 words)
 AGENTIC_EVENT_KEEP_N     <- 18L                                # events kept after prune_events scoring

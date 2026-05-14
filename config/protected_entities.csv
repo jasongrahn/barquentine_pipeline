@@ -1,7 +1,7 @@
 slug,canonical_name,entity_type,played_by,exclude_from_spotting
 basil,Basil,pc,David,FALSE
-captain,Captain,pc_alias,David,FALSE
-the_captain,The Captain,pc_alias,David,FALSE
+captain,Basil,pc_alias,David,FALSE
+the_captain,Basil,pc_alias,David,FALSE
 room,Room,pc,John,FALSE
 lumi,Lumi,pc,Chase,FALSE
 john,John,player,,TRUE
@@ -12,3 +12,4 @@ elder_abarat,Elder Abarat,npc,,FALSE
 ted,Ted,npc,,FALSE
 ted_2,Ted-2,npc,,FALSE
 the_admiral,The Admiral,dm_voice,,FALSE
+admiral,The Admiral,dm_voice,,FALSE
