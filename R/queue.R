@@ -27,7 +27,14 @@ library(fs)
     # Recursive critic loop columns — default for rows written before Phase 0
     iteration_count    = 1L,
     claude_used        = FALSE,
-    iteration_log      = "[]"
+    iteration_log      = "[]",
+    # APS grounding columns — default NA for legacy critic-loop rows
+    coverage_score        = NA_real_,
+    matched_claim_count   = NA_integer_,
+    unmatched_claim_count = NA_integer_,
+    pipeline_path         = NA_character_,
+    matched_claims        = NA_character_,
+    unmatched_claims      = NA_character_
   )
   for (col in names(defaults)) {
     if (!col %in% names(df)) df[[col]] <- defaults[[col]]
@@ -36,17 +43,23 @@ library(fs)
 }
 
 enqueue_review <- function(draft, verdict_list, section_id, source_text,
-                           prompt             = NULL,
-                           note_type          = NA_character_,
-                           entity_name        = NA_character_,
-                           chunk_count        = NA_integer_,
-                           source_episode_ids = NA_character_,
-                           existing_note      = NA_character_,
-                           status             = "pending",
-                           iteration_count    = 1L,
-                           claude_used        = FALSE,
-                           iteration_log      = "[]",
-                           .queue_path        = REVIEW_QUEUE_PATH) {
+                           prompt                = NULL,
+                           note_type             = NA_character_,
+                           entity_name           = NA_character_,
+                           chunk_count           = NA_integer_,
+                           source_episode_ids    = NA_character_,
+                           existing_note         = NA_character_,
+                           status                = "pending",
+                           iteration_count       = 1L,
+                           claude_used           = FALSE,
+                           iteration_log         = "[]",
+                           coverage_score        = NA_real_,
+                           matched_claim_count   = NA_integer_,
+                           unmatched_claim_count = NA_integer_,
+                           pipeline_path         = NA_character_,
+                           matched_claims        = NA_character_,
+                           unmatched_claims      = NA_character_,
+                           .queue_path           = REVIEW_QUEUE_PATH) {
   dir_create(file.path(.queue_path, "staging"), recurse = TRUE)
 
   if (!is.null(prompt)) {
@@ -88,10 +101,22 @@ enqueue_review <- function(draft, verdict_list, section_id, source_text,
     status_detail      = NA_character_,
     merged_into        = NA_character_,
     last_action_at     = NA_character_,
-    iteration_count    = as.integer(iteration_count),
-    claude_used        = isTRUE(claude_used),
-    iteration_log      = as.character(iteration_log),
-    stringsAsFactors   = FALSE
+    iteration_count       = as.integer(iteration_count),
+    claude_used           = isTRUE(claude_used),
+    iteration_log         = as.character(iteration_log),
+    coverage_score        = if (length(coverage_score) == 1 && is.na(coverage_score))
+                              NA_real_ else as.numeric(coverage_score),
+    matched_claim_count   = if (length(matched_claim_count) == 1 && is.na(matched_claim_count))
+                              NA_integer_ else as.integer(matched_claim_count),
+    unmatched_claim_count = if (length(unmatched_claim_count) == 1 && is.na(unmatched_claim_count))
+                              NA_integer_ else as.integer(unmatched_claim_count),
+    pipeline_path         = if (length(pipeline_path) == 1 && is.na(pipeline_path))
+                              NA_character_ else as.character(pipeline_path),
+    matched_claims        = if (length(matched_claims) == 1 && is.na(matched_claims))
+                              NA_character_ else as.character(matched_claims),
+    unmatched_claims      = if (length(unmatched_claims) == 1 && is.na(unmatched_claims))
+                              NA_character_ else as.character(unmatched_claims),
+    stringsAsFactors      = FALSE
   )
 
   write_csv(row, .staging_file_path(section_id, .queue_path))

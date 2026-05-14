@@ -1,140 +1,114 @@
 library(testthat)
 source(test_path("../../config.R"))
+source(test_path("../../R/ollama.R"))
 source(test_path("../../R/agentic_entity_fact_check.R"))
 
-make_entity_record <- function(passages = c(
+make_passages <- function() c(
   "Attorrnash is a githyanki soldier stationed on the Giff Flotilla.",
   "He spoke briefly with the Captain and seemed suspicious.",
   "The location was confirmed as the Astral Sea region."
-)) {
-  list(
-    entity_id          = "attorrnash",
-    entity_name        = "Attorrnash",
-    note_type          = "npc",
-    source_passages    = passages,
-    source_episode_ids = "s02e34"
-  )
-}
+)
 
-# ---- verify_entity_citations — null extraction ------------------------------
+# ---- .parse_aps_propositions ------------------------------------------------
 
-test_that("NULL extraction returns NA confidence and zero counts", {
-  rec    <- make_entity_record()
-  result <- verify_entity_citations(NULL, rec)
-  expect_equal(result$n_checked, 0L)
-  expect_equal(result$n_unsupported, 0L)
-  expect_true(is.na(result$confidence))
-  expect_equal(nrow(result$results), 0L)
+test_that("parses hyphen-bullet propositions correctly", {
+  raw <- ": PROPOSITIONS:\n<s>\n- Attorrnash is a soldier.\n- He is suspicious.\n</s>"
+  props <- .parse_aps_propositions(raw)
+  expect_equal(props, c("Attorrnash is a soldier.", "He is suspicious."))
 })
 
-test_that("all-null-line extraction returns NA confidence", {
-  extraction <- list(
-    description           = list(value = NULL, line = NULL),
-    aliases               = list(),
-    exhibited_personality = list(value = NULL, line = NULL),
-    role_in_story         = list(value = NULL, line = NULL),
-    affiliations          = list()
-  )
-  rec    <- make_entity_record()
-  result <- verify_entity_citations(extraction, rec)
-  expect_equal(result$n_checked, 0L)
-  expect_true(is.na(result$confidence))
+test_that("strips numbered bullets", {
+  raw <- ": PROPOSITIONS:\n<s>\n1. First prop.\n2. Second prop.\n</s>"
+  props <- .parse_aps_propositions(raw)
+  expect_equal(props, c("First prop.", "Second prop."))
 })
 
-# ---- verify_entity_citations — supported citations --------------------------
-
-test_that("value present in cited passage returns supported = TRUE", {
-  extraction <- list(
-    description           = list(value = "githyanki soldier", line = 1L),
-    aliases               = list(),
-    exhibited_personality = list(value = NULL, line = NULL),
-    role_in_story         = list(value = NULL, line = NULL),
-    affiliations          = list()
-  )
-  rec    <- make_entity_record()
-  result <- verify_entity_citations(extraction, rec)
-  expect_equal(result$n_checked, 1L)
-  expect_equal(result$n_unsupported, 0L)
-  expect_equal(result$confidence, 1.0)
-  expect_true(result$results$supported[[1L]])
+test_that("drops empty lines and sentinel tags", {
+  raw <- ": PROPOSITIONS:\n<s>\n\n- Real prop.\n\n</s>"
+  props <- .parse_aps_propositions(raw)
+  expect_equal(props, "Real prop.")
 })
 
-test_that("substring check is case-insensitive", {
-  extraction <- list(
-    description           = list(value = "GITHYANKI SOLDIER", line = 1L),
-    aliases               = list(),
-    exhibited_personality = list(value = NULL, line = NULL),
-    role_in_story         = list(value = NULL, line = NULL),
-    affiliations          = list()
-  )
-  rec    <- make_entity_record()
-  result <- verify_entity_citations(extraction, rec)
-  expect_true(result$results$supported[[1L]])
+test_that("returns empty character for NULL or blank input", {
+  expect_equal(.parse_aps_propositions(NULL), character(0))
+  expect_equal(.parse_aps_propositions(""), character(0))
+  expect_equal(.parse_aps_propositions("   "), character(0))
 })
 
-# ---- verify_entity_citations — unsupported citations -----------------------
+# ---- .split_draft_claims ----------------------------------------------------
 
-test_that("cited line out of range returns supported = FALSE", {
-  extraction <- list(
-    description           = list(value = "a soldier", line = 99L),  # passage 99 doesn't exist
-    aliases               = list(),
-    exhibited_personality = list(value = NULL, line = NULL),
-    role_in_story         = list(value = NULL, line = NULL),
-    affiliations          = list()
-  )
-  rec    <- make_entity_record()
-  result <- verify_entity_citations(extraction, rec)
-  expect_false(result$results$supported[[1L]])
-  expect_equal(result$n_unsupported, 1L)
-  expect_lt(result$confidence, 1.0)
+test_that("strips YAML frontmatter before splitting", {
+  draft <- "---\nname: Attorrnash\nrole: soldier\n---\nHe is a githyanki soldier. He seems suspicious."
+  claims <- .split_draft_claims(draft)
+  expect_false(any(grepl("^---", claims)))
+  expect_false(any(grepl("name:", claims)))
+  expect_true(any(grepl("githyanki", claims)))
 })
 
-test_that("value not present in cited passage returns supported = FALSE", {
-  extraction <- list(
-    description           = list(value = "completely fabricated detail", line = 1L),
-    aliases               = list(),
-    exhibited_personality = list(value = NULL, line = NULL),
-    role_in_story         = list(value = NULL, line = NULL),
-    affiliations          = list()
-  )
-  rec    <- make_entity_record()
-  result <- verify_entity_citations(extraction, rec)
-  expect_false(result$results$supported[[1L]])
+test_that("strips ## headers", {
+  draft <- "## Background\nHe is a githyanki soldier. He seems suspicious."
+  claims <- .split_draft_claims(draft)
+  expect_false(any(grepl("^##", claims)))
 })
 
-# ---- verify_entity_citations — array fields ---------------------------------
-
-test_that("array affiliations with line citations are checked", {
-  # A data.frame (as fromJSON would produce for an array of objects)
-  affiliations_df <- data.frame(name = "Giff Flotilla", line = 1L,
-                                stringsAsFactors = FALSE)
-  extraction <- list(
-    description           = list(value = NULL, line = NULL),
-    aliases               = list(),
-    exhibited_personality = list(value = NULL, line = NULL),
-    role_in_story         = list(value = NULL, line = NULL),
-    affiliations          = affiliations_df
-  )
-  rec    <- make_entity_record()
-  result <- verify_entity_citations(extraction, rec)
-  expect_equal(result$n_checked, 1L)
-  # "Giff Flotilla" appears in passage 1
-  expect_true(result$results$supported[[1L]])
+test_that("drops claims shorter than 10 chars", {
+  draft <- "Hi. A short one. This is a longer valid sentence indeed."
+  claims <- .split_draft_claims(draft)
+  expect_true(all(nchar(claims) >= 10L))
 })
 
-# ---- confidence arithmetic --------------------------------------------------
+test_that("returns empty for NULL or blank draft", {
+  expect_equal(.split_draft_claims(NULL), character(0))
+  expect_equal(.split_draft_claims(""), character(0))
+})
 
-test_that("confidence = n_supported / n_checked", {
-  extraction <- list(
-    description           = list(value = "githyanki soldier", line = 1L),  # supported
-    aliases               = list(),
-    exhibited_personality = list(value = "fabricated trait xyz", line = 1L),  # unsupported
-    role_in_story         = list(value = NULL, line = NULL),
-    affiliations          = list()
+# ---- fact_check_entity — coverage score -------------------------------------
+
+test_that("coverage_score = 1.0 when all claims match a proposition", {
+  assign("ollama_generate", function(...) {
+    ": PROPOSITIONS:\n<s>\n- Attorrnash is a githyanki soldier.\n- He seems suspicious.\n</s>"
+  }, envir = globalenv())
+  on.exit(rm("ollama_generate", envir = globalenv()), add = TRUE)
+
+  result <- fact_check_entity(
+    entity_id       = "attorrnash",
+    draft_markdown  = "Attorrnash is a githyanki soldier. He seems suspicious.",
+    source_passages = make_passages()
   )
-  rec    <- make_entity_record()
-  result <- verify_entity_citations(extraction, rec)
-  expect_equal(result$n_checked, 2L)
-  expect_equal(result$n_unsupported, 1L)
-  expect_equal(result$confidence, 0.5)
+  expect_equal(result$pipeline_path, "aps_grounding")
+  expect_gte(result$coverage_score, 0)
+  expect_lte(result$coverage_score, 1)
+  expect_true(is.character(result$matched_claims))
+  expect_true(is.character(result$unmatched_claims))
+})
+
+test_that("aps_error path returned on timeout", {
+  assign("ollama_generate", function(...) list(timed_out = TRUE),
+         envir = globalenv())
+  on.exit(rm("ollama_generate", envir = globalenv()), add = TRUE)
+
+  result <- fact_check_entity("e", "Some draft.", make_passages())
+  expect_equal(result$pipeline_path, "aps_error")
+  expect_true(is.na(result$coverage_score))
+})
+
+test_that("aps_error path returned on empty proposition list", {
+  assign("ollama_generate", function(...) ": PROPOSITIONS:\n<s>\n</s>",
+         envir = globalenv())
+  on.exit(rm("ollama_generate", envir = globalenv()), add = TRUE)
+
+  result <- fact_check_entity("e", "Some draft.", make_passages())
+  expect_equal(result$pipeline_path, "aps_error")
+  expect_true(is.na(result$coverage_score))
+})
+
+test_that("returns expected field names", {
+  assign("ollama_generate", function(...) {
+    ": PROPOSITIONS:\n<s>\n- A proposition.\n</s>"
+  }, envir = globalenv())
+  on.exit(rm("ollama_generate", envir = globalenv()), add = TRUE)
+
+  result <- fact_check_entity("e", "A sentence here for testing purposes.", make_passages())
+  expect_true(all(c("matched_claims", "unmatched_claims", "coverage_score",
+                    "aps_proposition_count", "pipeline_path") %in% names(result)))
 })

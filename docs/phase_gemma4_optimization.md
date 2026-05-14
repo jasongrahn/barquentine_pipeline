@@ -93,6 +93,37 @@ Rollback: `git revert R/agentic_entity_fact_check.R`; queue schema addition is a
 
 ---
 
+## Phase C Findings (2026-05-14)
+
+**C1 — APS model confirmed**
+
+Model in Ollama registry: `gurubot/gemma-2b-aps-it:Q4_K_M`
+
+Fed Attorrnash source passages (5 passages, ~7510 words) via `ollama_generate(prompt=passages_text, system_prompt="", model="gurubot/gemma-2b-aps-it:Q4_K_M", format=NULL, think=FALSE)`.
+
+**Raw output format:**
+```
+: PROPOSITIONS:
+<s>
+- <proposition text>
+- <proposition text>
+...
+</s>
+```
+
+**Key observations:**
+- Header line is `: PROPOSITIONS:\n<s>\n`
+- Each proposition is a hyphen-bullet line: `- <text>`
+- Output ends with `</s>` sentinel
+- At 7510 words: only ~8 propositions generated (model hits its generation limit early)
+- At ~3004 words (2 passages): still ~8 short propositions
+- Propositions reflect surface utterances from the text, not structured facts
+- Identity confusion present: propositions about "The Admiral" even when feeding Attorrnash passages (same text contains both characters)
+
+**Parsing strategy:** strip `: PROPOSITIONS:` header and `<s>`/`</s>` tags; split on newlines; strip leading `[-*0-9. ]+`; drop empty strings and `</s>`.
+
+---
+
 ## Phase D — Gemma4 Tool Calling (Optional, after C)
 
 Replace `format=` with native `<tool_call>` XML function calling.

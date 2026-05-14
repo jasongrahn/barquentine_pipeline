@@ -351,12 +351,16 @@ list(
     {
       ep <- entity_agentic_targets[[1]]
       if (is.null(ep) || is.null(entity_agentic_extracted$extraction))
-        return(list(n_checked = 0L, n_unsupported = 0L, confidence = NA_real_,
-                    results = tibble::tibble(kind = character(), line = integer(),
-                                            supported = logical(), claim = character())))
-      verify_entity_citations(entity_agentic_extracted$extraction, ep)
+        return(list(matched_claims = character(0), unmatched_claims = character(0),
+                    coverage_score = NA_real_, aps_proposition_count = 0L,
+                    pipeline_path = "aps_error"))
+      fact_check_entity(
+        entity_id      = ep$entity_id,
+        draft_markdown = entity_agentic_markdown,
+        source_passages = ep$source_passages
+      )
     },
-    pattern = map(entity_agentic_targets, entity_agentic_extracted)
+    pattern = map(entity_agentic_targets, entity_agentic_extracted, entity_agentic_markdown)
   ),
 
   tar_target(

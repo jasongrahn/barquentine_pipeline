@@ -100,6 +100,7 @@ render_location_review <- function(row) {
     ),
 
     if (length(issues) > 0) render_critic_cards_with_actions(issues, src_quotes, dismissed),
+    render_grounding_panel(row),
     hr(style = "margin:12px 0;"),
     render_action_bar(row, is_rejected = is_rejected)
   )
