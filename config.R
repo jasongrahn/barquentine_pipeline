@@ -86,7 +86,7 @@ CURRENT_SESSION <- "s02e37"          # ← update this each session (s01e01 zero
 
 # Set TRUE to write to /tmp/barquentine-preview/ instead of vault
 # Always do a dry run first when testing new extraction prompts
-DRY_RUN         <- FALSE             # ← flip to FALSE when ready for live run
+DRY_RUN         <- TRUE              # ← flip to FALSE when ready for live run
 DRY_RUN_PATH    <- "/tmp/barquentine-preview"
 
 # -----------------------------------------------------------------------------
@@ -122,8 +122,8 @@ AGENTIC_VTT_SESSION_IDS  <- c("s02e34", "s02e35", "s02e36", "s02e37")
 # Add episode IDs here to run entity notes through schema-enforced extraction
 # instead of the legacy critic-loop path. Start empty; Phase 4.1 adds first ID.
 AGENTIC_ENTITY_SESSION_IDS        <- c("s02e37")
-AGENTIC_ENTITY_SCHEMA_VERSION     <- "v1"
-AGENTIC_ENTITY_PASSAGE_WORD_LIMIT <- 4000L
+AGENTIC_ENTITY_SCHEMA_VERSION     <- "v2"
+AGENTIC_ENTITY_PASSAGE_WORD_LIMIT <- 8000L
 AGENTIC_ENTITY_MODEL              <- OLLAMA_MODEL
 
 AGENTIC_CHUNK_SIZE_LINES <- 50L                                # dialogue lines per chunk (~800-1000 words)

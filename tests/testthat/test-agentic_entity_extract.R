@@ -57,9 +57,9 @@ test_that(".truncate_passages always keeps at least one passage", {
 SKILLS_DIR <- test_path("../../agents/wiki_skills")
 
 test_that("extract_entity returns correct entity_id and note_type", {
-  assign(".call_ollama_skill", function(...) '{"description": {"value": "A githyanki soldier.", "line": 1}, "aliases": [], "exhibited_personality": {"value": null, "line": null}, "role_in_story": {"value": null, "line": null}}',
+  assign("ollama_generate", function(...) '{"description": {"value": "A githyanki soldier.", "line": 1}, "aliases": [], "exhibited_personality": {"value": null, "line": null}, "role_in_story": {"value": null, "line": null}}',
          envir = globalenv())
-  on.exit(rm(".call_ollama_skill", envir = globalenv()), add = TRUE)
+  on.exit(rm("ollama_generate", envir = globalenv()), add = TRUE)
 
   rec    <- make_entity_record("npc")
   result <- extract_entity(rec, skills_dir = SKILLS_DIR)
@@ -70,9 +70,9 @@ test_that("extract_entity returns correct entity_id and note_type", {
 })
 
 test_that("extract_entity sets timed_out=TRUE and extraction=NULL on timeout", {
-  assign(".call_ollama_skill", function(...) list(timed_out = TRUE),
+  assign("ollama_generate", function(...) list(timed_out = TRUE),
          envir = globalenv())
-  on.exit(rm(".call_ollama_skill", envir = globalenv()), add = TRUE)
+  on.exit(rm("ollama_generate", envir = globalenv()), add = TRUE)
 
   rec    <- make_entity_record("npc")
   result <- extract_entity(rec, skills_dir = SKILLS_DIR)
@@ -82,9 +82,9 @@ test_that("extract_entity sets timed_out=TRUE and extraction=NULL on timeout", {
 })
 
 test_that("extract_entity handles JSON parse failure gracefully", {
-  assign(".call_ollama_skill", function(...) "not json at all",
+  assign("ollama_generate", function(...) "not json at all",
          envir = globalenv())
-  on.exit(rm(".call_ollama_skill", envir = globalenv()), add = TRUE)
+  on.exit(rm("ollama_generate", envir = globalenv()), add = TRUE)
 
   rec    <- make_entity_record("location")
   result <- suppressWarnings(extract_entity(rec, skills_dir = SKILLS_DIR))
@@ -95,11 +95,11 @@ test_that("extract_entity handles JSON parse failure gracefully", {
 
 test_that("extract_entity uses pc skill for pc note_type", {
   skill_used <- NULL
-  assign(".call_ollama_skill", function(model, base_url, system, user, ...) {
-    skill_used <<- if (grepl("player character", system, ignore.case = TRUE)) "pc" else "other"
+  assign("ollama_generate", function(prompt, system_prompt, ...) {
+    skill_used <<- if (grepl("player character", system_prompt, ignore.case = TRUE)) "pc" else "other"
     '{"bio": {"value": null, "line": null}, "description": {"value": null, "line": null}, "aliases": [], "exhibited_personality": {"value": null, "line": null}, "role_in_story": {"value": null, "line": null}, "relatives": []}'
   }, envir = globalenv())
-  on.exit(rm(".call_ollama_skill", envir = globalenv()), add = TRUE)
+  on.exit(rm("ollama_generate", envir = globalenv()), add = TRUE)
 
   rec    <- make_entity_record("pc")
   result <- extract_entity(rec, skills_dir = SKILLS_DIR)

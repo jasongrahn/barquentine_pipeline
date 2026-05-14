@@ -95,7 +95,7 @@ extract_entity <- function(entity_record,
   note_type   <- entity_record$note_type
   passages    <- entity_record$source_passages
 
-  passages          <- .truncate_passages(passages, AGENTIC_ENTITY_PASSAGE_WORD_LIMIT)
+  passages <- .truncate_passages(passages, AGENTIC_ENTITY_PASSAGE_WORD_LIMIT)
   numbered_passages <- .number_passages(passages)
 
   aliases <- if (!is.null(entity_record$entity_aliases) &&
@@ -114,13 +114,13 @@ extract_entity <- function(entity_record,
     .open = "{", .close = "}"
   )
 
-  raw <- .call_ollama_skill(
-    model    = model,
-    base_url = base_url,
-    system   = system,
-    user     = user,
-    think    = FALSE,
-    format   = entity_schema(note_type)
+  raw <- ollama_generate(
+    prompt        = user,
+    system_prompt = system,
+    model         = model,
+    base_url      = base_url,
+    format        = entity_schema(note_type),
+    think         = FALSE
   )
 
   timed_out  <- is.list(raw) && isTRUE(raw$timed_out)

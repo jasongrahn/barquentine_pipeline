@@ -172,9 +172,13 @@ process_vtt_file <- function(path, episode_id,
   )
 }
 
-extract_relevant_sentences <- function(passage, entity_name, window = 2L) {
-  sentences <- str_split(passage, "(?<=[.!?])\\s+")[[1]]
-  hits      <- which(str_detect(sentences, regex(entity_name, ignore_case = TRUE)))
+extract_relevant_sentences <- function(passage, entity_name, window = 2L,
+                                       aliases = character(0)) {
+  sentences  <- str_split(passage, "(?<=[.!?])\\s+")[[1]]
+  all_names  <- unique(c(entity_name, aliases))
+  pattern    <- paste(vapply(all_names, regex, character(1), ignore_case = TRUE),
+                      collapse = "|")
+  hits       <- which(str_detect(sentences, pattern))
   if (!length(hits)) return("")
   idx <- unique(sort(c(outer(hits, seq(-window, window, by = 1L), "+"))))
   idx <- idx[idx >= 1L & idx <= length(sentences)]
@@ -301,10 +305,10 @@ aggregate_entity_passages <- function(vtt_file_results, alias_registry,
   # protected_entities.csv where slug != make_slug(canonical_name).
   # Also enriches note_type to "pc" for any record whose canonical entity_type
   # is "pc" — required so entity_schema("pc") fires correctly downstream.
+  prot_df     <- tryCatch(read_csv(protected_path, show_col_types = FALSE),
+                          error = function(e) NULL)
   routing_map <- load_canonical_routing_map(protected_path)
   if (length(routing_map) > 0L) {
-    prot_df <- tryCatch(read_csv(protected_path, show_col_types = FALSE),
-                        error = function(e) NULL)
 
     for (alias_slug in names(routing_map)) {
       if (!alias_slug %in% names(acc)) next
@@ -392,12 +396,38 @@ aggregate_entity_passages <- function(vtt_file_results, alias_registry,
     if (length(dropped_names)) paste(head(dropped_names, 10), collapse = ", ") else "none"
   ))
 
-  # Step 3: sentence-window extraction on survivors only
+  # Build a lookup from canonical slug → alias display names, sourced from
+  # protected_entities.csv (pc_alias rows) and alias_registry (variant names).
+  alias_lookup <- list()
+  if (!is.null(prot_df) && all(c("slug", "canonical_name", "entity_type") %in% names(prot_df))) {
+    alias_rows <- prot_df[!is.na(prot_df$entity_type) &
+                          prot_df$entity_type %in% c("pc_alias"), ]
+    for (i in seq_len(nrow(alias_rows))) {
+      canon_slug <- make_slug(alias_rows$canonical_name[[i]])
+      alias_lookup[[canon_slug]] <- c(alias_lookup[[canon_slug]],
+                                      alias_rows$slug[[i]])
+    }
+  }
+  if (is.list(alias_registry) && length(alias_registry) > 0L) {
+    for (alias_slug in names(alias_registry)) {
+      canon_slug <- alias_registry[[alias_slug]]
+      if (is.character(canon_slug)) {
+        alias_lookup[[canon_slug]] <- unique(c(alias_lookup[[canon_slug]], alias_slug))
+      }
+    }
+  }
+
+  # Step 3: sentence-window extraction on survivors only.
+  # Pass entity_aliases so the window hits on alias names (e.g. "Captain")
+  # as well as the canonical name (e.g. "Basil").
   lapply(records, function(rec) {
+    entity_aliases      <- alias_lookup[[rec$entity_id]] %||% character(0)
     extracted <- vapply(rec$source_passages, extract_relevant_sentences,
-                        character(1), entity_name = rec$entity_name)
+                        character(1), entity_name = rec$entity_name,
+                        aliases = entity_aliases)
     extracted <- extracted[nzchar(extracted)]
     rec$source_passages <- if (length(extracted)) extracted else rec$source_passages
+    rec$entity_aliases  <- entity_aliases
     rec
   })
 }
