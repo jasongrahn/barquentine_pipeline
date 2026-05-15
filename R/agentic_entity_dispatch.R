@@ -26,11 +26,11 @@ dispatch_agentic_entity <- function(markdown,
     stop("dispatch_agentic_entity: empty markdown for entity_id=", entity_id)
   }
 
-  # APS grounding shape (Phase C)
   coverage_score        <- fact_check_summary$coverage_score        %||% NA_real_
   matched_claims_vec    <- fact_check_summary$matched_claims         %||% character(0)
   unmatched_claims_vec  <- fact_check_summary$unmatched_claims       %||% character(0)
   pipeline_path_val     <- fact_check_summary$pipeline_path          %||% NA_character_
+  aps_proposition_count <- fact_check_summary$aps_proposition_count  %||% 0L
   matched_claim_count   <- length(matched_claims_vec)
   unmatched_claim_count <- length(unmatched_claims_vec)
 

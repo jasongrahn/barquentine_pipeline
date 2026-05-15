@@ -1,6 +1,6 @@
 # Stack Rank — Active Backlog
 
-Last updated: 2026-05-15 (Phase E: E1 APS fix + E2 wet run + E3 focus anchor shipped; tool calling fires 1/6 (ted), null-fill on tool_call output; fallback still better; focus anchor needs wet run validation).
+Last updated: 2026-05-15 (Phase F immediate tasks done: F3pre zero hits → tool calling retired; F2a positive focus anchor in all 4 templates; F0.5 format=NULL + R-side parse; F4 APS replaced by source-sentence substring. F0 Bug #15260 verification pending manual run. F1 wet run is next action).
 
 Single-page checklist. Detail entries live in `docs/ideas.md`,
 `docs/phase_next_backlog.md`, and `docs/phase_agentic_extraction_integration.md` —
@@ -11,14 +11,16 @@ move to bottom of its section, don't delete.
 
 ## P0 — Must-do / blockers
 
-- [ ] **Entity-chain generator regression** — gemma4 produces ungrounded
-  templates; critic rewards compression. Blocks any entity publishing.
-  Candidate fix: rewrite extraction prompt in Gemma4-native style (not
-  Claude-shaped); raise `AGENTIC_ENTITY_PASSAGE_WORD_LIMIT` to use Gemma4's
-  128K context for holistic (no-chunk) extraction; test `think = TRUE` on
-  gemma4:latest via Ollama.
-  [ideas.md → "Entity-chain generator produces ungrounded templates (P0)"]
-  [oss_wiki_tools_investigation.md → Gemma4 capability audit]
+- [ ] **Entity-chain generator regression** — root cause is identity confusion:
+  Gemma4 writes about the most prominent character in multi-character VTT passages,
+  not the target entity. 4/6 entities show this in s02e36. Blocks entity publishing.
+  F2a positive focus anchor landed (replaces E3 negation framing; added at start +
+  end of prompt for recency bias); F0.5 format=NULL + R-side parse in place;
+  F4 APS replaced by substring grounding. F1 wet run validates all three.
+  Next lever if F1 < 4/6: F2 vault note prepend (gives model correct gender/role upfront).
+  Ruled out: thinking mode, 128K context window, XML tool-calling, APS grounding.
+  [phase_gemma4_optimization.md → Phase F]
+  [ideas.md → "Feed existing vault note" + "Entity-chain generator produces ungrounded templates"]
 - [ ] **Best-draft selection picks the worst draft** — contaminates every
   entity critic-loop run. Downstream of P0 #2 (both entity-chain).
   [ideas.md → "Best-draft selection picks the worst draft (P0)"]
@@ -38,12 +40,20 @@ move to bottom of its section, don't delete.
   all-nulls (Gemma4 emits valid XML but populates arguments with null). Fallback (format=)
   produces better content than tool_calling null-fill. Next: try Ollama native tools
   parameter or defer tool calling. [phase_gemma4_optimization.md → Phase E Findings]
-- [ ] **Identity confusion persists (focus anchor)** — added "Focus ONLY on {entity_name}.
-  Ignore all other characters." to user_template.md for skills 05–08. Requires wet run
-  to confirm improvement on basil and lumi. [phase_gemma4_optimization.md → E3]
-- [ ] **Tool calling null-fill** — Gemma4 emits `<tool_call>` XML but populates fields
-  with null (confirmed on ted). Try Ollama native `/api/chat` `tools` parameter before
-  deferring tool calling to P3. [phase_gemma4_optimization.md → E2]
+- [ ] **F1 wet run — validate E3 focus anchor** — E3 committed; run s02e36 wet run;
+  record per-entity whether draft is about the correct character. Success: ≥ 4/6
+  entities correct. If < 4/6, proceed directly to F2.
+  [phase_gemma4_optimization.md → Phase F, F1]
+- [ ] **F2 — Feed existing vault note as identity anchor** — prepend vault note to
+  user prompt for entities with existing pages (basil, lumi, room). Gives model
+  correct gender/role/aliases upfront; shifts job from full-draft to delta-detection.
+  Gate on F1 result: implement regardless, but prioritize if E3 is insufficient.
+  [phase_gemma4_optimization.md → Phase F, F2] [ideas.md → "Feed existing vault note"]
+- [x] **F3 — Tool calling retired** — F3pre: zero tool template hits in gemma4 modelfile.
+  3-turn loop + `.entity_tc_system()` removed from `extract_entity()`. (2026-05-15)
+- [x] **F4 — APS replaced by source-sentence substring grounding** — `fact_check_entity()`
+  now uses `str_detect(source_text, fixed(claim))`. No LLM call; pure R. `aps_proposition_count`
+  column preserved (holds source sentence count). (2026-05-15)
 - [ ] **Process s02e36 through agentic flow** — completes 3/3 gate; agentic
   can become default. [phase_agentic_extraction_integration.md → Rollout]
 - [x] **Captain row carries stale `merged` status across runs** — investigated
@@ -114,6 +124,10 @@ move to bottom of its section, don't delete.
 
 ## Completed (recent)
 
+- [x] **Phase F immediate tasks** — F3pre (zero tool template → tool calling retired),
+  F2a (positive focus anchor in all 4 user_templates, head + tail), F0.5 (format=NULL +
+  R-side fence-strip/JSON-parse/schema-validate fallback), F4 (APS → substring grounding).
+  1204 tests pass. (2026-05-15)
 - [x] **Phase D — Gemma4 tool-calling loop** — `parse_tool_calls()` added to
   `R/ollama.R`; `extract_entity()` rewritten as 3-turn tool-call loop with
   `format=` fallback; `pipeline_path` field on extraction result.

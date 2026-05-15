@@ -1,5 +1,6 @@
-# Gemma4 Optimization Plan
+# Gemma4 Optimization Plan — Active
 Branch: `feature/gemma4-optimization`
+History (Phases A–E, D0/E wet runs, P1): `docs/phase_gemma4_history.md`
 
 ## Problem
 Wet run #2: gemma4 can't produce passage citation indices under Ollama `format=` constrained decoding.
@@ -11,266 +12,165 @@ Four mismatches: (1) citation indices wrong model job, (2) thinking unused, (3) 
 - Shiny consolidation (separate track)
 - Wet run #3 until this plan lands
 
----
-
-## Phase A — DONE (2026-05-14)
-
-**A1 thinking mode test results:**
-
-| Method | Result |
-|---|---|
-| `think=TRUE` via `/api/chat` | silently ignored |
-| `<\|think\|>` in system prompt via `/api/chat` | no effect |
-| `/api/generate` raw, prompt ends `<start_of_turn>model\n<think>\n` | works — real thinking block + answer |
-| VTT passages 2x (~3000w) via raw | TIMEOUT at 90s |
-| VTT passages 5x (~6873w) via raw | infinite loop, never closes `</think>` |
-
-Conclusion: thinking not viable for VTT entity extraction. `ollama_generate_thinking()` added to `R/ollama.R` for future short-input use; not called by `extract_entity()`.
-
-**A2 Claude-ism audit:** prompts already lean. Issues found:
-- `## section headers` — not needed by Gemma4
-- `Return ONLY the JSON object. No preamble...` — Claude phrasing
-- ALL-CAPS `Do NOT` — Claude emphasis
-- citation rule duplicated in system + user template
-- `set 'line' to the N from PASSAGE [N]` — specific phrasing pressures hallucinated integers; changed to "or null if uncertain"
+## Status entering Phase F
+- Phases A–E: DONE
+- E3 focus anchor committed (wet run pending)
+- Tool calling (XML-in-system-prompt): RETIRED — 1/6 fire rate, null-fill confirmed
+- APS grounding: ACTIVE but being replaced by F4 source-sentence substring
+- Identity confusion: dominant issue — 4/6 entities write about the wrong character
 
 ---
 
-## Phase B — DONE (2026-05-14)
+## Phase F — Identity Anchoring + Tool Calling Resolution
 
-**What changed:**
-- `agents/wiki_skills/05-08/system.md` — rewritten; no `##` headers; explicit type per field (`single object` vs `ARRAY`); shorter closing instruction
-- `agents/wiki_skills/05-08/user_template.md` — simplified; removed duplicate citation rule
-- `R/ollama.R` — added `ollama_generate_thinking()` (not used in pipeline)
-- `config.R` — `AGENTIC_ENTITY_PASSAGE_WORD_LIMIT` 4000L → 8000L
-- `R/source_c.R` — `prot_df` hoisted; alias lookup built from `pc_alias` rows; `extract_relevant_sentences()` gets `aliases=` param (OR-matches canonical + aliases); `rec$entity_aliases` populated on every record
-- `tests/testthat/test-agentic_entity_extract.R` — stubs changed from `.call_ollama_skill` → `ollama_generate`; 19/19 pass; 7 pre-existing git_commit failures unchanged
+Root-cause analysis from D0/E wet runs:
 
-**Why `format=` still required:** without it, gemma4 ignores JSON instructions and outputs markdown prose. Constrained decoding stays until Phase C.
-
-**Basil test result:**
-- Alias-aware windowing: 6873w → 2974w (57% reduction)
-- No timeout, no NULL extraction
-- Description grounded in passages (improvement over wet run #2 template fill)
-- Identity confusion persists (wrong gender, "Librarian" alias hallucinated)
-- `line: {}` persists (constrained decoding bug)
-→ Both remaining issues are Phase C's job
+1. **Identity confusion** (dominant) — Gemma4 writes about the most prominent character in multi-character passages, not the target entity. Responsible for 4/6 template/wrong-character outputs in s02e36.
+2. **format= template fill** — constrained decoding satisfies schema without semantic grounding. Partially downstream of #1; may self-correct when #1 is fixed.
+3. **Tool calling null-fill** — XML-in-system-prompt produces null arguments. Untested: Ollama native `/api/chat` `tools=` parameter.
+4. **APS wrong tool** — proposition extraction ≠ factual consistency verification. ~8 propositions regardless of input length; identity confusion fundamental; not fixable by tuning. Replace with source-sentence substring.
 
 ---
 
-## Phase C — APS Critic Replacement
+### Phase F — Canonical Execution Order (Panel Consensus, 2026-05-15)
 
-**Goal:** replace broken citation-index fact-checker with proposition-based grounding. No constrained decoding.
-
-**Architecture:**
 ```
-source passages → gemma-aps:2b → proposition list
-draft markdown  → split sentences → match against propositions → {matched, unmatched, coverage_score}
+IMMEDIATE — DONE (2026-05-15):
+  F3pre DONE — zero tool template hits; tool calling retired from extract_entity()
+  F2a   DONE — positive focus anchor in all four user_template.md files (recency bias added)
+  F0.5  DONE — format=NULL + R-side parse (fence-strip→JSON→schema validate→NULL)
+  F4    DONE — APS replaced by source-sentence substring in agentic_entity_fact_check.R
+  F0    PENDING — Bug #15260 verification (manual Ollama run required)
+        - Real multi-character s02e36 passage (NOT a trivial stub)
+        - Run: think=FALSE vs think=NULL; compare structurally + semantically
+
+NEXT:
+  F1    Wet run (s02e36) — validate F2a focus anchor
+        Success: ≥ 4/6 entities write about correct character
+  F2    Vault note prepend for entities with existing pages
+        Requires: vault_note param in extract_entity() + glue + user_template.md
+        Handle NULL/empty gracefully
+
+DEFER:
+  Phase G (two-pass) — only if F2/F2a/F3 insufficient
+  MiniCheck — only if substring false-negative rate on paraphrased claims unacceptably high
 ```
 
-**C1** — confirm `gemma-aps` model name in Ollama registry; pull; feed one entity's passages; record output format. No code.
+---
 
-**C2** — rewrite `R/agentic_entity_fact_check.R`
-- APS call: `ollama_generate()`, `format=NULL`, source passages as prompt → parse into `character` vector
-- Draft split: strip frontmatter + `##` headers; split on `.` and newlines
-- Match: `stringr::str_detect(propositions, claim, ignore_case=TRUE)` per claim
-- Return: `list(matched_claims, unmatched_claims, coverage_score, pipeline_path="aps_grounding", aps_proposition_count)`
-- On APS timeout or empty list: `coverage_score=NA`, `pipeline_path="aps_error"`, no crash
+### F0 — Bug #15260 Verification
 
-**C3** — `R/agentic_entity_dispatch.R` + `review_queue/queue.csv`
-- Dispatch: read `coverage_score / matched_claim_count / unmatched_claim_count / pipeline_path` instead of `verdict/confidence/issues`
-- queue.csv: ADD columns `coverage_score`, `matched_claim_count`, `unmatched_claim_count`, `pipeline_path`; keep old columns for legacy rows; backfill `pipeline_path` on existing rows
+Bug: `think=FALSE` + `format=` silently disables constrained decoding. If live, all s02e36 schema-constrained quality data is suspect.
 
-**C4** — `shiny/review_queue/app.R`
-- Add grounding panel below critic-findings card
-- Green badges: matched claims; red badges: unmatched; `coverage_score` as %
-- Legacy rows (`pipeline_path=="critic_loop"` or NA): show existing verdict/issues unchanged
-
-**Done when:** one entity end-to-end APS → draft → grounding check; Shiny shows panel; queue.csv has new columns.
-
-**Risk:** if `gemma-aps` not available in Ollama → C1 blocks everything. Confirm before C2.
-Rollback: `git revert R/agentic_entity_fact_check.R`; queue schema addition is additive/safe.
+Checklist:
+- [ ] Use a real multi-character s02e36 source passage
+- [ ] Run same passage: think=FALSE vs think=NULL; compare structurally + semantically
+- [ ] If outputs differ → bug live; format= fallback path untrustworthy
+- [ ] If outputs same → bug not live; format= fallback operational
 
 ---
 
-## Phase C Findings (2026-05-14)
+### F0.5 — Confirm format=NULL + R-side parse fallback
 
-**C1 — APS model confirmed**
+Required steps (NOT a one-liner, ~15 lines):
+1. Fence-strip: `.strip_json_fences()` (already in codebase)
+2. `tryCatch(fromJSON(stripped), error = function(e) NULL)`
+3. Schema validate output against `entity_schema(note_type)`
+4. Return NULL on validation failure, not crash
 
-Model in Ollama registry: `gurubot/gemma-2b-aps-it:Q4_K_M`
+Confirm this path produces valid entity records on a real s02e36 passage before treating it as a usable fallback.
 
-Fed Attorrnash source passages (5 passages, ~7510 words) via `ollama_generate(prompt=passages_text, system_prompt="", model="gurubot/gemma-2b-aps-it:Q4_K_M", format=NULL, think=FALSE)`.
+---
 
-**Raw output format:**
+### F2 — Feed existing vault note as identity anchor
+
+For entities with existing vault notes (PCs: basil, lumi, room), prepend the vault note to the extraction user prompt:
+
 ```
-: PROPOSITIONS:
-<s>
-- <proposition text>
-- <proposition text>
-...
-</s>
+Here is the current wiki page for {entity_name}. Use this as an identity anchor —
+the gender, role, and relationships listed here are established facts. Extract
+only new information from the passages below that adds to or contradicts this page.
+
+EXISTING NOTE:
+{existing_note}
 ```
 
-**Key observations:**
-- Header line is `: PROPOSITIONS:\n<s>\n`
-- Each proposition is a hyphen-bullet line: `- <text>`
-- Output ends with `</s>` sentinel
-- At 7510 words: only ~8 propositions generated (model hits its generation limit early)
-- At ~3004 words (2 passages): still ~8 short propositions
-- Propositions reflect surface utterances from the text, not structured facts
-- Identity confusion present: propositions about "The Admiral" even when feeding Attorrnash passages (same text contains both characters)
+Implementation:
+- `extract_entity()` (`R/agentic_entity_extract.R`): resolve vault note path; read file if non-empty; pass as `existing_note` glue variable.
+- `user_template.md` for all four entity skills: add optional `{existing_note}` block (empty string when no vault file).
+- Gate: inject only when vault file exists and `nchar(existing_note) > 0`.
 
-**Parsing strategy:** strip `: PROPOSITIONS:` header and `<s>`/`</s>` tags; split on newlines; strip leading `[-*0-9. ]+`; drop empty strings and `</s>`.
+Success criterion: basil and lumi drafts match or exceed Phase B "partially grounded" baseline.
 
 ---
 
-## Phase D Assessment — D0 Wet Run Results (s02e36, 2026-05-15)
+### F2a — Orientation sentence for entities without vault notes
 
-CURRENT_SESSION=s02e36, AGENTIC_ENTITY_SESSION_IDS includes "s02e36". 6 entities kept after passage aggregation: lumi (pc), room (pc), attorrnash (npc), ted (npc), basil (pc), the_giff_flotilla (location).
+Replaces E3 "Focus ONLY on {entity_name}. Ignore all other characters." with positive framing:
 
-**Coverage scores:**
-
-| entity | note_type | coverage_score | matched | unmatched | aps_props |
-|---|---|---|---|---|---|
-| lumi | pc | 0.0 | 0 | 7 | 68 |
-| room | pc | 0.0 | 0 | 6 | 7 |
-| attorrnash | npc | 0.0 | 0 | 5 | 4 |
-| ted | npc | 0.0 | 0 | 1 | 19 |
-| basil | pc | 0.0 | 0 | 2 | 27 |
-| the_giff_flotilla | location | 0.0 | 0 | 1 | 20 |
-
-All 6 entities: coverage_score = 0.0. Threshold condition (< 0.3 for majority) met.
-
-**Identity confusion observed in drafts:**
-
-- lumi: "The provided text does not contain explicit biographical information about a character" — model refused to identify lumi in passages. Then generic cooking-competition template.
-- room: "A character participating in a cooking/culinary competition setting" — no Room-specific facts.
-- attorrnash: Misidentified as "a professional chef hosting the competition" — wrong role, wrong identity.
-- ted: 1 sentence, grounded ("The Admiral mentions Ted's progress on the astral plane") but draft is too thin to evaluate further.
-- basil: 2 sentences, partially grounded ("bags under his eyes", "King Burger's Summons"). No clear confusion.
-- the_giff_flotilla: "The challenge/competition setup / The appearance of the three teams" — generic template, zero location specifics.
-
-4/6 entities show clear identity confusion or template output. 1 (basil) is partially grounded. 1 (ted) is sparse but grounded.
-
-**Two causes for coverage_score=0:**
-
-1. APS matching algorithm direction bug: code does `str_detect(proposition, claim)` — checks if the full claim text appears INSIDE a short proposition. A 50-word claim sentence will never appear as a substring of a 10-word proposition. Even grounded output would score 0. Coverage_score is not a reliable signal until this is fixed.
-
-2. Gemma4 template output: 4/6 drafts are generic "character in cooking competition" templates that don't name the entity. These would fail grounding even with a correct matcher.
-
-**D0 Decision: PROCEED with Phase D.**
-
-Condition met: coverage_score < 0.3 for 6/6 entities AND unmatched claims are model-output failures (identity confusion / template fill), not APS noise. Removing format= may reduce template output. Note: Phase D cannot fix identity confusion alone — the underlying cause is likely that passages contain multiple characters and the model doesn't anchor to the target entity name. Tool calling will be tested; if output is still identity-confused, move to entity-name anchoring in prompts as a separate fix.
-
----
-
-## Phase D — Gemma4 Tool Calling — DONE (2026-05-15)
-
-Replace `format=` with native `<tool_call>` XML function calling.
-
-**D1 — DONE:** `parse_tool_calls(raw)` added to `R/ollama.R`.
-- Regex-extracts all `(?s)<tool_call>(.*?)</tool_call>` blocks (DOTALL, handles multiline JSON).
-- Parses each block with `fromJSON()`.
-- Returns list of parsed objects or NULL on no valid blocks.
-
-**D2 — DONE:** `extract_entity()` in `R/agentic_entity_extract.R` rewritten as tool-calling loop.
-- `.entity_tc_system()` helper builds augmented system prompt: base system + JSON tool definition + `<tool_call>` output instruction.
-- Loop: 3 turns of `ollama_generate(format=NULL)` → `parse_tool_calls()` → match on `name == "extract_<type>"` → return `extraction=$arguments, pipeline_path="tool_calling"`.
-- On timed_out in any turn: return `pipeline_path="tool_call_timeout"`.
-- After 3 failed turns: fallback to original `format=entity_schema(note_type)` path → `pipeline_path="tool_call_fallback"`.
-- Public signature unchanged. Return shape gains `pipeline_path` field (ignored by existing callers).
-
-**Tests:** 19/19 pass (stubs return plain JSON → tool-call turns fail → fallback runs correctly). 7 pre-existing git_commit failures unchanged.
-
-**Done when Gemma4 produces entity record via tool calls for at least one entity:** Not yet confirmed on live hardware (requires next wet run). Fallback path guarantees no regression — if tool calling never fires, behavior is identical to pre-D2.
-
-Rollback: `git revert R/agentic_entity_extract.R`; `parse_tool_calls()` and `.entity_tc_system()` are additive/safe.
-
----
-
-## Phase E — Next Steps (from D0 findings)
-
-Two unresolved issues. Fix in order.
-
-**E1 — Fix APS matcher direction bug (one-liner)**
-
-File: `R/agentic_entity_fact_check.R`, line ~117.
-
-Current:
-```r
-any(str_detect(propositions, regex(claim, ignore_case = TRUE)))
 ```
-Bug: looks for the full claim text as a substring inside a short proposition. Always FALSE.
-
-Fix:
-```r
-any(str_detect(claim, regex(propositions, ignore_case = TRUE)))
+Target entity: {entity_name} (type: {note_type}). Focus exclusively on this entity.
+All other characters mentioned in the passages are context, not the subject.
 ```
-This checks whether any proposition text appears as a substring inside the claim. Still imperfect (exact substring match) but directionally correct. Rerun s02e36 after fix and record new coverage_score distribution.
 
-**E2 — Verify Phase D tool calling on live hardware**
+- user_template.md change only; no R code required.
+- Remove E3 negation framing entirely — likely backfires on small models.
+- Add directive at END of user prompt (after SOURCE PASSAGES block) to exploit recency bias.
 
-After E1, run `tar_make()` with s02e36. Check `pipeline_path` in queue.csv:
-- `tool_calling` → Gemma4 emitted valid `<tool_call>` XML. Compare draft quality to Phase B/D0 baseline.
-- `tool_call_fallback` (all rows) → `.entity_tc_system()` prompt format not recognized by Gemma4 under Ollama. If so, try: (a) use Ollama's native `/api/chat` `tools` parameter instead of XML-in-system-prompt, or (b) defer tool calling, accept `format=` constrained decoding as permanent.
-
-**E3 — Identity confusion root cause (if E2 still produces templates)**
-
-If tool calling fires but drafts are still identity-confused, the issue is that VTT passages contain 4+ characters and gemma4 doesn't anchor to the target entity name. Candidate fix: prepend a one-line anchor to the user prompt — "Focus ONLY on {entity_name}. Ignore all other characters." — before the passage block. Test on basil and lumi first.
+Success criterion: attorrnash draft correctly identifies the entity as a dowar cartomancer, not "a chef."
 
 ---
 
-## Phase E Findings (2026-05-15, s02e36)
+### F3 — Ollama native /api/chat tools parameter
 
-**E1 — APS matcher direction fix confirmed**
+Pre-check first:
+```bash
+ollama show gemma4 --modelfile | grep '{{ if .Tools }}'
+```
+Zero hits → skip F3, go to retire path.
 
-One-liner fix applied to `R/agentic_entity_fact_check.R` line 118.
-Two direction-locking tests added to `test-agentic_entity_fact_check.R`; 29/29 pass.
-
-**E2 — Coverage scores after E1 fix**
-
-| entity | note_type | coverage_score | matched | unmatched | extraction_path |
-|---|---|---|---|---|---|
-| attorrnash | npc | 0.20 | 1 | 4 | tool_call_fallback |
-| basil | pc | 0.00 | 0 | 2 | tool_call_fallback |
-| lumi | pc | 0.00 | 0 | 5 | tool_call_fallback |
-| room | pc | 0.00 | 0 | 7 | tool_call_fallback |
-| ted | npc | 0.00 | 0 | 1 | **tool_calling** |
-| the_giff_flotilla | location | 0.00 | 0 | 6 | tool_call_fallback |
-
-**E2 — Tool calling results**
-
-- 1/6 entities fired `tool_calling` (ted). 5/6 fell back to `format=` constrained decoding.
-- ted's `tool_calling` draft is all-nulls (valid `<tool_call>` XML emitted but arguments populated with null). Fallback (basil) produced grounded content. Tool calling path works syntactically but not semantically — Gemma4 emits the function call scaffold but doesn't populate fields.
-- Conclusion: Ollama XML-in-system-prompt approach produces null-fill on 5/6 entities. Try Ollama native `/api/chat` `tools` parameter before deferring.
-
-**E2 — Identity confusion persists (E3 triggered)**
-
-- attorrnash draft: describes "Room's cooking" on the attorrnash page — identity confusion confirmed.
-- lumi draft: generic magical performer, N/A overview.
-- room draft: generic cooking competitor template.
-- ted draft: all nulls (tool_calling null-fill).
-- basil draft: partially grounded ("Spelljammer's Supper Nova", "cautious/thoughtful") — best outcome.
-
-**E3 — Focus anchor applied**
-
-Added "Focus ONLY on {entity_name}. Ignore all other characters." immediately before the SOURCE PASSAGES block in all four entity skills (05–08 user_template.md). Committed. Requires wet run to validate.
+If template present:
+- Add `ollama_chat_with_tools(prompt, system_prompt, tools, model, base_url)` to `R/ollama.R`.
+- Parse: `message$tool_calls[[1]][["function"]]$arguments` (NOT `$function$` — reserved keyword).
+- Test standalone on basil before touching `extract_entity()`.
+- Threshold ≥ 5/6 non-null non-empty to replace XML approach.
+- If < 5/6: retire tool calling entirely; remove 3-turn loop + `.entity_tc_system()`.
 
 ---
 
-## P1: Captain Stale-Status Investigation (2026-05-15)
+### F4 — Replace APS with source-sentence substring
 
-Bug description: "captain row shows status=merged with a fresh draft after s02e35 run."
+Rewrite `R/agentic_entity_fact_check.R`:
+- Remove APS model call and `.parse_aps_propositions()`
+- Replace with:
+  ```r
+  source_text <- paste(entity_record$source_passages, collapse = " ")
+  is_matched <- vapply(claims, function(claim) {
+    stringr::str_detect(source_text, stringr::fixed(claim, ignore_case = TRUE))
+  }, logical(1))
+  ```
+  Direction: `claim` inside `source_text`. NOT the reverse.
+- Return shape unchanged: `coverage_score`, `matched_claims`, `unmatched_claims`.
+- Column rename blocked: do NOT rename `aps_proposition_count` until Shiny UI audited. Populate with source sentence count under existing column name.
 
-After s02e36 run, queue.csv shows:
-- captain: status=rejected (from s02e35 UI action), enqueued_at=2026-05-12
-- the_captain: status=rejected (from s02e35 UI action), enqueued_at=2026-05-12
-- basil: status=pending (fresh from today's run), enqueued_at=2026-05-14
+Plumbing fix required: `aps_proposition_count` absent from `dispatch_agentic_entity()` scope — add `aps_proposition_count <- fact_check_summary$aps_proposition_count %||% 0L` in dispatch.
 
-**Root cause:** Canonical routing (added in Phase B) merges captain+the_captain passages into basil before dispatch. No captain or the_captain staging files are ever written. `consolidate_queue()` only overwrites rows whose section_id appears in staging; since captain/the_captain are absent from staging, their prior UI-set statuses persist. This is correct behavior: the UI resolved captain as rejected; canonical routing then directed all future captain data to basil.
+---
 
-**consolidate_queue() logic is correct:** line `existing <- existing[!existing$section_id %in% new_rows$section_id, ]` properly drops-and-replaces on section_id match. No bug.
+## Phase F — Success Criteria (overall)
 
-The "merged+fresh-draft" scenario from s02e35 pre-dates canonical routing and was a one-time state. It cannot recur in current code because captain no longer gets its own staging file.
+- ≥ 4/6 entities from s02e36 write about the correct character (identity confusion ≤ 2/6).
+- ≥ 3/6 entities have `coverage_score > 0` (at least one grounded claim matched).
+- No entity draft contains named content clearly about a different specific character.
+- basil and lumi draft quality matches or exceeds Phase B "partially grounded" baseline.
 
-**Verdict: Not a bug. No fix needed. Remove from P1.**
+## Phase F — Ruled-Out Approaches (do not re-evaluate)
+
+| Approach | Phase tested | Outcome |
+|---|---|---|
+| Gemma4 thinking via `/api/chat` | A | Silently ignored |
+| `<\|think\|>` in system prompt via `/api/chat` | A | No effect |
+| VTT full-length input to raw thinking | A | Timeout / infinite loop |
+| Raise `AGENTIC_ENTITY_PASSAGE_WORD_LIMIT` to 128K | B | Window raised to 8000L; timeout risk on full context |
+| XML `<tool_call>` in system prompt | D/E | 1/6 fire rate, null-fill on arguments |
+| APS as primary grounding verifier | C/D0 | ~8 propositions, identity confusion in model itself |

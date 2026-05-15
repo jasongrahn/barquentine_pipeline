@@ -4,7 +4,7 @@ Type: {note_type}
 
 Context: {recap_context}
 
-Focus ONLY on {entity_name}. Ignore all other characters.
+Target entity: {entity_name} (type: {note_type}). Focus exclusively on this entity. All other characters mentioned in the passages are context, not the subject.
 
 SOURCE PASSAGES
 (each block labeled PASSAGE [N] — use N as the line number)
@@ -14,3 +14,5 @@ SOURCE PASSAGES
 
 Extract information about this location from the SOURCE PASSAGES above.
 Fields with no source support must be null or [].
+
+Target entity: {entity_name} (type: {note_type}). Focus exclusively on this entity. All other characters mentioned in the passages are context, not the subject.
