@@ -1,6 +1,6 @@
 # Stack Rank — Active Backlog
 
-Last updated: 2026-05-15 (Phase D shipped: tool-calling loop + fallback in extract_entity(); captain P1 closed — not a bug).
+Last updated: 2026-05-15 (Phase D shipped; APS matcher direction bug documented as P1; next action = verify tool-calling fires on live hardware).
 
 Single-page checklist. Detail entries live in `docs/ideas.md`,
 `docs/phase_next_backlog.md`, and `docs/phase_agentic_extraction_integration.md` —
@@ -30,6 +30,18 @@ move to bottom of its section, don't delete.
 
 ## P1 — Important / ship-quality
 
+- [ ] **APS matcher direction bug** — `agentic_entity_fact_check.R` does
+  `str_detect(proposition, claim)` which looks for a 50-word claim INSIDE a
+  10-word proposition — always false. Should be `str_detect(claim, proposition)`
+  (or fuzzy similarity). Fix is a one-liner; do it before trusting any
+  coverage_score as a grounding signal.
+  [phase_gemma4_optimization.md → D0 findings]
+- [ ] **Verify Phase D tool-calling fires on live hardware** — run s02e36 (or
+  any entity session) and inspect `pipeline_path` column in queue.csv after
+  `tar_make()`. If all rows = `tool_call_fallback`, Gemma4 is not emitting
+  `<tool_call>` XML and `.entity_tc_system()` prompt needs revision. If at least
+  one row = `tool_calling`, compare draft quality vs Phase B baseline.
+  [phase_gemma4_optimization.md → Phase D]
 - [ ] **Process s02e36 through agentic flow** — completes 3/3 gate; agentic
   can become default. [phase_agentic_extraction_integration.md → Rollout]
 - [x] **Captain row carries stale `merged` status across runs** — investigated

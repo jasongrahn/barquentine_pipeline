@@ -188,6 +188,38 @@ Rollback: `git revert R/agentic_entity_extract.R`; `parse_tool_calls()` and `.en
 
 ---
 
+## Phase E — Next Steps (from D0 findings)
+
+Two unresolved issues. Fix in order.
+
+**E1 — Fix APS matcher direction bug (one-liner)**
+
+File: `R/agentic_entity_fact_check.R`, line ~117.
+
+Current:
+```r
+any(str_detect(propositions, regex(claim, ignore_case = TRUE)))
+```
+Bug: looks for the full claim text as a substring inside a short proposition. Always FALSE.
+
+Fix:
+```r
+any(str_detect(claim, regex(propositions, ignore_case = TRUE)))
+```
+This checks whether any proposition text appears as a substring inside the claim. Still imperfect (exact substring match) but directionally correct. Rerun s02e36 after fix and record new coverage_score distribution.
+
+**E2 — Verify Phase D tool calling on live hardware**
+
+After E1, run `tar_make()` with s02e36. Check `pipeline_path` in queue.csv:
+- `tool_calling` → Gemma4 emitted valid `<tool_call>` XML. Compare draft quality to Phase B/D0 baseline.
+- `tool_call_fallback` (all rows) → `.entity_tc_system()` prompt format not recognized by Gemma4 under Ollama. If so, try: (a) use Ollama's native `/api/chat` `tools` parameter instead of XML-in-system-prompt, or (b) defer tool calling, accept `format=` constrained decoding as permanent.
+
+**E3 — Identity confusion root cause (if E2 still produces templates)**
+
+If tool calling fires but drafts are still identity-confused, the issue is that VTT passages contain 4+ characters and gemma4 doesn't anchor to the target entity name. Candidate fix: prepend a one-line anchor to the user prompt — "Focus ONLY on {entity_name}. Ignore all other characters." — before the passage block. Test on basil and lumi first.
+
+---
+
 ## P1: Captain Stale-Status Investigation (2026-05-15)
 
 Bug description: "captain row shows status=merged with a fresh draft after s02e35 run."
