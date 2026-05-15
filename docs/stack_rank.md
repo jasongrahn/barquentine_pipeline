@@ -1,6 +1,6 @@
 # Stack Rank — Active Backlog
 
-Last updated: 2026-05-14 (Phase C shipped: APS grounding live; citation-scoring P0 closed; pipeline_path column added).
+Last updated: 2026-05-15 (Phase D shipped: tool-calling loop + fallback in extract_entity(); captain P1 closed — not a bug).
 
 Single-page checklist. Detail entries live in `docs/ideas.md`,
 `docs/phase_next_backlog.md`, and `docs/phase_agentic_extraction_integration.md` —
@@ -32,13 +32,11 @@ move to bottom of its section, don't delete.
 
 - [ ] **Process s02e36 through agentic flow** — completes 3/3 gate; agentic
   can become default. [phase_agentic_extraction_integration.md → Rollout]
-- [ ] **Captain row carries stale `merged` status across runs** — entity
-  dispatcher writes a new draft for `captain` on each run, but
-  `consolidate_queue()` keeps the prior `merged`/`merged_into` state
-  because… actually it should overwrite. Investigate why s02e35 left
-  captain row with new draft + new enqueued_at but old `status=merged`
-  and `merged_into=the_captain`. Reviewer impact: captain edits skip
-  triage. New bug, surfaced 2026-05-12.
+- [x] **Captain row carries stale `merged` status across runs** — investigated
+  2026-05-15. Not a bug. Canonical routing merges captain → basil; no
+  captain staging file is created; prior UI-set rejected/merged status
+  persists correctly. consolidate_queue() logic is correct.
+  [phase_gemma4_optimization.md → P1 section]
 - [ ] **Consolidate the two Shiny apps into one `app.R`** — reviewer friction
   before broader rollout. [ideas.md → "Consolidate the two Shiny apps"]
 - [ ] **`R/git_commit.R` bug** — vault commits don't include note files;
@@ -102,6 +100,12 @@ move to bottom of its section, don't delete.
 
 ## Completed (recent)
 
+- [x] **Phase D — Gemma4 tool-calling loop** — `parse_tool_calls()` added to
+  `R/ollama.R`; `extract_entity()` rewritten as 3-turn tool-call loop with
+  `format=` fallback; `pipeline_path` field on extraction result.
+  D0 wet run (s02e36): all 6 entities coverage_score=0, identity confusion
+  dominant; APS matcher direction bug noted; D proceeded per threshold rules.
+  (2026-05-15)
 - [x] **Fix `agentic_queue_consolidated` skip bug** — agentic dispatch
   returns same-shape list across runs, so targets skipped consolidation
   and the s02e35 agentic row sat orphaned in staging until manual

@@ -1,5 +1,6 @@
 library(httr2)
 library(purrr)
+library(jsonlite)
 
 # format: NULL for free-text generation; a JSON Schema list for structured output.
 # Ollama's format parameter enforces the schema at the token level — the model
@@ -83,6 +84,22 @@ ollama_generate_thinking <- function(system_prompt, user_prompt,
   }
 
   content
+}
+
+# Extracts all <tool_call>...</tool_call> blocks from a raw model response.
+# Returns a list of parsed R objects (each with $name and $arguments), or NULL
+# if no well-formed blocks are found.
+parse_tool_calls <- function(raw) {
+  if (is.null(raw) || !nzchar(trimws(raw))) return(NULL)
+  m      <- gregexpr("(?s)<tool_call>(.*?)</tool_call>", raw, perl = TRUE)
+  blocks <- regmatches(raw, m)[[1L]]
+  if (length(blocks) == 0L) return(NULL)
+  results <- lapply(blocks, function(b) {
+    json_str <- trimws(sub("^<tool_call>\\s*", "", sub("\\s*</tool_call>$", "", b)))
+    tryCatch(fromJSON(json_str, simplifyVector = FALSE), error = function(e) NULL)
+  })
+  results <- Filter(Negate(is.null), results)
+  if (length(results) == 0L) NULL else results
 }
 
 ollama_generate <- function(prompt, system_prompt, model = OLLAMA_MODEL,

@@ -1,5 +1,6 @@
 library(testthat)
 source(test_path("../../config.R"))
+source(test_path("../../R/ollama.R"))
 source(test_path("../../R/agentic_extract.R"))
 source(test_path("../../R/agentic_entity_schemas.R"))
 source(test_path("../../R/agentic_entity_extract.R"))

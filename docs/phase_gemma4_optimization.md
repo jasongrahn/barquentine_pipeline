@@ -124,14 +124,83 @@ Fed Attorrnash source passages (5 passages, ~7510 words) via `ollama_generate(pr
 
 ---
 
-## Phase D — Gemma4 Tool Calling (Optional, after C)
+## Phase D Assessment — D0 Wet Run Results (s02e36, 2026-05-15)
+
+CURRENT_SESSION=s02e36, AGENTIC_ENTITY_SESSION_IDS includes "s02e36". 6 entities kept after passage aggregation: lumi (pc), room (pc), attorrnash (npc), ted (npc), basil (pc), the_giff_flotilla (location).
+
+**Coverage scores:**
+
+| entity | note_type | coverage_score | matched | unmatched | aps_props |
+|---|---|---|---|---|---|
+| lumi | pc | 0.0 | 0 | 7 | 68 |
+| room | pc | 0.0 | 0 | 6 | 7 |
+| attorrnash | npc | 0.0 | 0 | 5 | 4 |
+| ted | npc | 0.0 | 0 | 1 | 19 |
+| basil | pc | 0.0 | 0 | 2 | 27 |
+| the_giff_flotilla | location | 0.0 | 0 | 1 | 20 |
+
+All 6 entities: coverage_score = 0.0. Threshold condition (< 0.3 for majority) met.
+
+**Identity confusion observed in drafts:**
+
+- lumi: "The provided text does not contain explicit biographical information about a character" — model refused to identify lumi in passages. Then generic cooking-competition template.
+- room: "A character participating in a cooking/culinary competition setting" — no Room-specific facts.
+- attorrnash: Misidentified as "a professional chef hosting the competition" — wrong role, wrong identity.
+- ted: 1 sentence, grounded ("The Admiral mentions Ted's progress on the astral plane") but draft is too thin to evaluate further.
+- basil: 2 sentences, partially grounded ("bags under his eyes", "King Burger's Summons"). No clear confusion.
+- the_giff_flotilla: "The challenge/competition setup / The appearance of the three teams" — generic template, zero location specifics.
+
+4/6 entities show clear identity confusion or template output. 1 (basil) is partially grounded. 1 (ted) is sparse but grounded.
+
+**Two causes for coverage_score=0:**
+
+1. APS matching algorithm direction bug: code does `str_detect(proposition, claim)` — checks if the full claim text appears INSIDE a short proposition. A 50-word claim sentence will never appear as a substring of a 10-word proposition. Even grounded output would score 0. Coverage_score is not a reliable signal until this is fixed.
+
+2. Gemma4 template output: 4/6 drafts are generic "character in cooking competition" templates that don't name the entity. These would fail grounding even with a correct matcher.
+
+**D0 Decision: PROCEED with Phase D.**
+
+Condition met: coverage_score < 0.3 for 6/6 entities AND unmatched claims are model-output failures (identity confusion / template fill), not APS noise. Removing format= may reduce template output. Note: Phase D cannot fix identity confusion alone — the underlying cause is likely that passages contain multiple characters and the model doesn't anchor to the target entity name. Tool calling will be tested; if output is still identity-confused, move to entity-name anchoring in prompts as a separate fix.
+
+---
+
+## Phase D — Gemma4 Tool Calling — DONE (2026-05-15)
 
 Replace `format=` with native `<tool_call>` XML function calling.
 
-**D1** — add `parse_tool_calls(raw)` to `R/ollama.R` — regex extracts `<tool_call>` blocks, parses JSON args
+**D1 — DONE:** `parse_tool_calls(raw)` added to `R/ollama.R`.
+- Regex-extracts all `(?s)<tool_call>(.*?)</tool_call>` blocks (DOTALL, handles multiline JSON).
+- Parses each block with `fromJSON()`.
+- Returns list of parsed objects or NULL on no valid blocks.
 
-**D2** — rewrite `extract_entity()` as tool-calling loop: `format=NULL`, parse `<tool_call>` blocks, assemble record; fallback to free-text if no calls after 3 turns (`pipeline_path="tool_call_fallback"`)
+**D2 — DONE:** `extract_entity()` in `R/agentic_entity_extract.R` rewritten as tool-calling loop.
+- `.entity_tc_system()` helper builds augmented system prompt: base system + JSON tool definition + `<tool_call>` output instruction.
+- Loop: 3 turns of `ollama_generate(format=NULL)` → `parse_tool_calls()` → match on `name == "extract_<type>"` → return `extraction=$arguments, pipeline_path="tool_calling"`.
+- On timed_out in any turn: return `pipeline_path="tool_call_timeout"`.
+- After 3 failed turns: fallback to original `format=entity_schema(note_type)` path → `pipeline_path="tool_call_fallback"`.
+- Public signature unchanged. Return shape gains `pipeline_path` field (ignored by existing callers).
 
-**Done when:** Gemma4 produces entity record via tool calls; output compared to Phase B baseline.
+**Tests:** 19/19 pass (stubs return plain JSON → tool-call turns fail → fallback runs correctly). 7 pre-existing git_commit failures unchanged.
 
-Rollback: `git revert R/agentic_entity_extract.R`; `parse_tool_calls()` is additive.
+**Done when Gemma4 produces entity record via tool calls for at least one entity:** Not yet confirmed on live hardware (requires next wet run). Fallback path guarantees no regression — if tool calling never fires, behavior is identical to pre-D2.
+
+Rollback: `git revert R/agentic_entity_extract.R`; `parse_tool_calls()` and `.entity_tc_system()` are additive/safe.
+
+---
+
+## P1: Captain Stale-Status Investigation (2026-05-15)
+
+Bug description: "captain row shows status=merged with a fresh draft after s02e35 run."
+
+After s02e36 run, queue.csv shows:
+- captain: status=rejected (from s02e35 UI action), enqueued_at=2026-05-12
+- the_captain: status=rejected (from s02e35 UI action), enqueued_at=2026-05-12
+- basil: status=pending (fresh from today's run), enqueued_at=2026-05-14
+
+**Root cause:** Canonical routing (added in Phase B) merges captain+the_captain passages into basil before dispatch. No captain or the_captain staging files are ever written. `consolidate_queue()` only overwrites rows whose section_id appears in staging; since captain/the_captain are absent from staging, their prior UI-set statuses persist. This is correct behavior: the UI resolved captain as rejected; canonical routing then directed all future captain data to basil.
+
+**consolidate_queue() logic is correct:** line `existing <- existing[!existing$section_id %in% new_rows$section_id, ]` properly drops-and-replaces on section_id match. No bug.
+
+The "merged+fresh-draft" scenario from s02e35 pre-dates canonical routing and was a one-time state. It cannot recur in current code because captain no longer gets its own staging file.
+
+**Verdict: Not a bug. No fix needed. Remove from P1.**

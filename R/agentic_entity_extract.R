@@ -9,14 +9,15 @@
 # this file is self-sufficient when sourced by tests or smoke-test scripts.
 
 suppressPackageStartupMessages({
-  library(glue); library(cli)
+  library(glue); library(cli); library(jsonlite)
 })
 
-if (!exists(".call_ollama_skill", mode = "function")) {
-  src_dir <- tryCatch(dirname(normalizePath(sys.frame(1L)$ofile)),
-                      error = function(e) "R")
-  source(file.path(src_dir, "agentic_extract.R"), local = FALSE)
-}
+.agentic_entity_src_dir <- tryCatch(
+  dirname(normalizePath(sys.frame(1L)$ofile)), error = function(e) "R")
+if (!exists(".call_ollama_skill", mode = "function"))
+  source(file.path(.agentic_entity_src_dir, "agentic_extract.R"), local = FALSE)
+if (!exists("parse_tool_calls", mode = "function"))
+  source(file.path(.agentic_entity_src_dir, "ollama.R"), local = FALSE)
 if (!exists("entity_schema", mode = "function")) {
   src_dir <- tryCatch(dirname(normalizePath(sys.frame(1L)$ofile)),
                       error = function(e) "R")
@@ -26,6 +27,8 @@ if (!exists("entity_schema", mode = "function")) {
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+`%||%` <- function(x, y) if (is.null(x)) y else x
 
 .entity_skill_name <- function(note_type) {
   switch(note_type,
@@ -67,6 +70,26 @@ if (!exists("entity_schema", mode = "function")) {
       "i" = "Kept {kept}/{length(passages)} passages (limit: {word_limit} words)."
     ))
   passages[seq_len(kept)]
+}
+
+# Augments the base system prompt with a tool definition so Gemma4 emits
+# a <tool_call> XML block instead of raw JSON under constrained decoding.
+# The tool name matches .entity_skill_name() for easy lookup.
+.entity_tc_system <- function(note_type, base_system) {
+  tool_name <- paste0("extract_", note_type)
+  tool_def  <- toJSON(
+    list(list(name        = tool_name,
+              description = paste("Extract structured", note_type,
+                                  "information from D&D session transcript passages."),
+              parameters  = entity_schema(note_type))),
+    auto_unbox = TRUE, pretty = FALSE
+  )
+  paste0(
+    base_system,
+    "\n\nYou have access to this tool:\n", tool_def,
+    "\n\nCall the tool to return your answer. Output exactly:\n",
+    '<tool_call>{"name":"', tool_name, '","arguments":{...your fields...}}</tool_call>'
+  )
 }
 
 # ---------------------------------------------------------------------------
@@ -114,7 +137,50 @@ extract_entity <- function(entity_record,
     .open = "{", .close = "}"
   )
 
-  raw <- ollama_generate(
+  # --- D2: tool-calling loop (3 turns) ----------------------------------------
+  # Try to elicit a <tool_call> block from Gemma4 without constrained decoding.
+  # Falls back to the original format= path if all turns fail or produce no call.
+  tc_system <- .entity_tc_system(note_type, system)
+  tool_name <- paste0("extract_", note_type)
+  timed_out <- FALSE
+
+  for (turn in seq_len(3L)) {
+    raw <- ollama_generate(
+      prompt        = user,
+      system_prompt = tc_system,
+      model         = model,
+      base_url      = base_url,
+      format        = NULL,
+      think         = FALSE
+    )
+    timed_out <- is.list(raw) && isTRUE(raw$timed_out)
+    if (timed_out) break
+
+    calls <- parse_tool_calls(raw %||% "")
+    if (!is.null(calls)) {
+      matched <- Filter(function(c) identical(c[["name"]], tool_name), calls)
+      if (length(matched) > 0L) {
+        return(list(entity_id     = entity_id,
+                    note_type     = note_type,
+                    extraction    = matched[[1L]][["arguments"]],
+                    timed_out     = FALSE,
+                    pipeline_path = "tool_calling"))
+      }
+    }
+    cli_warn("Tool call turn {turn}/3 produced no valid {tool_name} call for {entity_id}.")
+  }
+
+  if (timed_out) {
+    return(list(entity_id     = entity_id,
+                note_type     = note_type,
+                extraction    = NULL,
+                timed_out     = TRUE,
+                pipeline_path = "tool_call_timeout"))
+  }
+
+  # --- Fallback: original format= constrained-decoding path ------------------
+  cli_warn("Tool calling failed for {entity_id}; falling back to format= path.")
+  raw_fb    <- ollama_generate(
     prompt        = user,
     system_prompt = system,
     model         = model,
@@ -122,15 +188,13 @@ extract_entity <- function(entity_record,
     format        = entity_schema(note_type),
     think         = FALSE
   )
+  timed_fb  <- is.list(raw_fb) && isTRUE(raw_fb$timed_out)
+  extr_fb   <- if (timed_fb) NULL
+               else .parse_skill_json(raw_fb, paste0("entity_", note_type), entity_id)
 
-  timed_out  <- is.list(raw) && isTRUE(raw$timed_out)
-  extraction <- if (timed_out) NULL
-               else .parse_skill_json(raw, paste0("entity_", note_type), entity_id)
-
-  list(
-    entity_id  = entity_id,
-    note_type  = note_type,
-    extraction = extraction,
-    timed_out  = timed_out
-  )
+  list(entity_id     = entity_id,
+       note_type     = note_type,
+       extraction    = extr_fb,
+       timed_out     = timed_fb,
+       pipeline_path = "tool_call_fallback")
 }
