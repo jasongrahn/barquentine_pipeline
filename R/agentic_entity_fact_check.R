@@ -115,7 +115,7 @@ fact_check_entity <- function(entity_id,
 
   # Match each claim against any proposition
   is_matched <- vapply(claims, function(claim) {
-    any(str_detect(propositions, regex(claim, ignore_case = TRUE)))
+    any(str_detect(claim, regex(propositions, ignore_case = TRUE)))
   }, logical(1))
 
   list(

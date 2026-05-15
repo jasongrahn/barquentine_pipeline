@@ -102,6 +102,42 @@ test_that("aps_error path returned on empty proposition list", {
   expect_true(is.na(result$coverage_score))
 })
 
+# ---- matcher direction: proposition text must appear INSIDE claim (not vice-versa) ----
+
+test_that("claim containing proposition text is matched (direction check)", {
+  # Proposition is a short phrase; claim is a longer sentence containing it.
+  # Correct direction: str_detect(claim, proposition) → TRUE
+  assign("ollama_generate", function(...) {
+    ": PROPOSITIONS:\n<s>\n- githyanki soldier\n- seems suspicious\n</s>"
+  }, envir = globalenv())
+  on.exit(rm("ollama_generate", envir = globalenv()), add = TRUE)
+
+  result <- fact_check_entity(
+    entity_id       = "attorrnash",
+    draft_markdown  = "Attorrnash is a githyanki soldier stationed on the Flotilla.",
+    source_passages = make_passages()
+  )
+  expect_length(result$matched_claims, 1L)
+  expect_length(result$unmatched_claims, 0L)
+  expect_equal(result$coverage_score, 1.0)
+})
+
+test_that("claim NOT containing any proposition text is unmatched (direction check)", {
+  assign("ollama_generate", function(...) {
+    ": PROPOSITIONS:\n<s>\n- completely unrelated text\n</s>"
+  }, envir = globalenv())
+  on.exit(rm("ollama_generate", envir = globalenv()), add = TRUE)
+
+  result <- fact_check_entity(
+    entity_id       = "attorrnash",
+    draft_markdown  = "Attorrnash is a githyanki soldier stationed on the Flotilla.",
+    source_passages = make_passages()
+  )
+  expect_length(result$matched_claims, 0L)
+  expect_length(result$unmatched_claims, 1L)
+  expect_equal(result$coverage_score, 0.0)
+})
+
 test_that("returns expected field names", {
   assign("ollama_generate", function(...) {
     ": PROPOSITIONS:\n<s>\n- A proposition.\n</s>"
