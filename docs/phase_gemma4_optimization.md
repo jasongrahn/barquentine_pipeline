@@ -220,6 +220,44 @@ If tool calling fires but drafts are still identity-confused, the issue is that 
 
 ---
 
+## Phase E Findings (2026-05-15, s02e36)
+
+**E1 — APS matcher direction fix confirmed**
+
+One-liner fix applied to `R/agentic_entity_fact_check.R` line 118.
+Two direction-locking tests added to `test-agentic_entity_fact_check.R`; 29/29 pass.
+
+**E2 — Coverage scores after E1 fix**
+
+| entity | note_type | coverage_score | matched | unmatched | extraction_path |
+|---|---|---|---|---|---|
+| attorrnash | npc | 0.20 | 1 | 4 | tool_call_fallback |
+| basil | pc | 0.00 | 0 | 2 | tool_call_fallback |
+| lumi | pc | 0.00 | 0 | 5 | tool_call_fallback |
+| room | pc | 0.00 | 0 | 7 | tool_call_fallback |
+| ted | npc | 0.00 | 0 | 1 | **tool_calling** |
+| the_giff_flotilla | location | 0.00 | 0 | 6 | tool_call_fallback |
+
+**E2 — Tool calling results**
+
+- 1/6 entities fired `tool_calling` (ted). 5/6 fell back to `format=` constrained decoding.
+- ted's `tool_calling` draft is all-nulls (valid `<tool_call>` XML emitted but arguments populated with null). Fallback (basil) produced grounded content. Tool calling path works syntactically but not semantically — Gemma4 emits the function call scaffold but doesn't populate fields.
+- Conclusion: Ollama XML-in-system-prompt approach produces null-fill on 5/6 entities. Try Ollama native `/api/chat` `tools` parameter before deferring.
+
+**E2 — Identity confusion persists (E3 triggered)**
+
+- attorrnash draft: describes "Room's cooking" on the attorrnash page — identity confusion confirmed.
+- lumi draft: generic magical performer, N/A overview.
+- room draft: generic cooking competitor template.
+- ted draft: all nulls (tool_calling null-fill).
+- basil draft: partially grounded ("Spelljammer's Supper Nova", "cautious/thoughtful") — best outcome.
+
+**E3 — Focus anchor applied**
+
+Added "Focus ONLY on {entity_name}. Ignore all other characters." immediately before the SOURCE PASSAGES block in all four entity skills (05–08 user_template.md). Committed. Requires wet run to validate.
+
+---
+
 ## P1: Captain Stale-Status Investigation (2026-05-15)
 
 Bug description: "captain row shows status=merged with a fresh draft after s02e35 run."

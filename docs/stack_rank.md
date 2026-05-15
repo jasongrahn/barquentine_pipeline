@@ -1,6 +1,6 @@
 # Stack Rank — Active Backlog
 
-Last updated: 2026-05-15 (Phase D shipped; APS matcher direction bug documented as P1; next action = verify tool-calling fires on live hardware).
+Last updated: 2026-05-15 (Phase E: E1 APS fix + E2 wet run + E3 focus anchor shipped; tool calling fires 1/6 (ted), null-fill on tool_call output; fallback still better; focus anchor needs wet run validation).
 
 Single-page checklist. Detail entries live in `docs/ideas.md`,
 `docs/phase_next_backlog.md`, and `docs/phase_agentic_extraction_integration.md` —
@@ -30,18 +30,20 @@ move to bottom of its section, don't delete.
 
 ## P1 — Important / ship-quality
 
-- [ ] **APS matcher direction bug** — `agentic_entity_fact_check.R` does
-  `str_detect(proposition, claim)` which looks for a 50-word claim INSIDE a
-  10-word proposition — always false. Should be `str_detect(claim, proposition)`
-  (or fuzzy similarity). Fix is a one-liner; do it before trusting any
-  coverage_score as a grounding signal.
-  [phase_gemma4_optimization.md → D0 findings]
-- [ ] **Verify Phase D tool-calling fires on live hardware** — run s02e36 (or
-  any entity session) and inspect `pipeline_path` column in queue.csv after
-  `tar_make()`. If all rows = `tool_call_fallback`, Gemma4 is not emitting
-  `<tool_call>` XML and `.entity_tc_system()` prompt needs revision. If at least
-  one row = `tool_calling`, compare draft quality vs Phase B baseline.
-  [phase_gemma4_optimization.md → Phase D]
+- [x] **APS matcher direction bug** — fixed 2026-05-15. `str_detect(claim, proposition)`
+  (correct direction). 29/29 tests pass. attorrnash now scores 0.20; others 0.0 (template
+  output, not matcher bug). [phase_gemma4_optimization.md → Phase E Findings]
+- [x] **Verify Phase D tool-calling fires on live hardware** — confirmed 2026-05-15.
+  1/6 entities (ted) fired `tool_calling`; 5/6 fell back. ted's tool_call output is
+  all-nulls (Gemma4 emits valid XML but populates arguments with null). Fallback (format=)
+  produces better content than tool_calling null-fill. Next: try Ollama native tools
+  parameter or defer tool calling. [phase_gemma4_optimization.md → Phase E Findings]
+- [ ] **Identity confusion persists (focus anchor)** — added "Focus ONLY on {entity_name}.
+  Ignore all other characters." to user_template.md for skills 05–08. Requires wet run
+  to confirm improvement on basil and lumi. [phase_gemma4_optimization.md → E3]
+- [ ] **Tool calling null-fill** — Gemma4 emits `<tool_call>` XML but populates fields
+  with null (confirmed on ted). Try Ollama native `/api/chat` `tools` parameter before
+  deferring tool calling to P3. [phase_gemma4_optimization.md → E2]
 - [ ] **Process s02e36 through agentic flow** — completes 3/3 gate; agentic
   can become default. [phase_agentic_extraction_integration.md → Rollout]
 - [x] **Captain row carries stale `merged` status across runs** — investigated

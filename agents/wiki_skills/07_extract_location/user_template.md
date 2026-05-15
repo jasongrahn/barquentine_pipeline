@@ -4,6 +4,8 @@ Type: {note_type}
 
 Context: {recap_context}
 
+Focus ONLY on {entity_name}. Ignore all other characters.
+
 SOURCE PASSAGES
 (each block labeled PASSAGE [N] — use N as the line number)
 {source_passages}
