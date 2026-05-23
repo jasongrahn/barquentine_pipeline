@@ -135,7 +135,7 @@ test_that("aggregate_entity_passages deduplicates same entity across two file re
     npcs       = list("Attorrnash" = list("chunk C")),
     locations  = list(), items = list(), factions = list()
   )
-  result <- aggregate_entity_passages(list(file1, file2, file3), list())
+  result <- aggregate_entity_passages(list(file1, file2, file3), list(), min_chunks = 1L)
 
   slugs <- sapply(result, `[[`, "entity_id")
   expect_equal(sum(slugs == "attorrnash"), 1)
@@ -194,7 +194,7 @@ test_that("aggregate_entity_passages source_episode_ids contains episode_id from
     items      = list(),
     factions   = list()
   )
-  result <- aggregate_entity_passages(list(file1), list())
+  result <- aggregate_entity_passages(list(file1), list(), min_chunks = 1L)
 
   rec <- result[[which(sapply(result, `[[`, "entity_id") == "brakk")]]
   expect_true("S2e34" %in% rec$source_episode_ids)

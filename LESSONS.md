@@ -112,6 +112,15 @@ Proposition content reflects surface utterances verbatim, not structured facts. 
 ### Transcription artifacts in source text
 Source text comes from automated transcripts and will contain garbled, split, or misheard words. The generator prompt must instruct the model to write `[unclear]` rather than guess — otherwise it invents plausible-sounding but fabricated content, violating the no-fabrication rule. Reviewers in the Shiny UI should treat `[unclear]` markers as expected, not as model failures.
 
+### Entity filtered by MIN_ENTITY_CHUNK_COUNT? Check spelling variants in VTT first
+When an entity appears in DM prep notes under one name ("Attorrnash") but the VTT transcript uses a different spelling ("Adernash") or title ("Cartamancer"), entity spotting collects zero passages under the DM-prep slug. The entity silently passes zero chunks and gets filtered. Diagnosis: grep the VTT source for partial name matches before assuming the character is truly absent. Fix: add the VTT variant(s) as aliases in `config/entity_aliases.csv` pointing to the canonical slug.
+
+### System prompt fields and JSON schema must stay in sync
+When a field is removed from the R schema (`agentic_entity_schemas.R`), it must also be removed from the skill's `system.md`. If the prompt still instructs the model to output a dropped field, constrained decoding (`format=entity_schema(...)`) suppresses it silently — but the model wastes generation tokens trying and may produce confused output in adjacent fields. After any schema v2-style field drop, audit all four skill system prompts against the updated schema properties list.
+
+### Exact substring grounding scores 0.0 for LLM-paraphrased claims
+`str_detect(source_text, fixed(claim))` requires the exact claim string to appear verbatim in the source. LLM-generated wiki prose is paraphrase, not quotation, so coverage_score is 0.0 for every claim — even well-grounded ones. Two-level fix: try exact match first; fall back to word-overlap (fraction of content words ≥4 chars from the claim that appear anywhere in the source, threshold ≥0.5). Word-overlap is permissive enough for legitimate paraphrase and strict enough to reject wholesale fabrication.
+
 ---
 
 ## Testing
@@ -139,3 +148,11 @@ testthat 3.x evaluates test files in a local environment. Functions defined via 
 assign("enqueue_review", function(...) invisible(NULL), envir = globalenv())
 ```
 A plain `enqueue_review <- function(...) invisible(NULL)` inside a `test_that()` block will not be found.
+
+---
+
+### `gert::git_add(".", repo = vault_path)` does NOT recursively stage untracked files
+Unlike `git add .` in the shell, `gert::git_add(".", ...)` treats `"."` as a literal filename — it does not recursively stage new untracked files. Root cause of the silent vault-commit bug where commits only contained `.obsidian/workspace.json` changes.
+
+Fix: enumerate changed/untracked files via `git_status(repo)$file`, filter the paths you want to exclude (e.g. `^\.obsidian/`), then pass the resulting character vector to `git_add(files, repo)`. Add a post-stage assertion that at least one note-directory path is present before calling `git_commit`.
+

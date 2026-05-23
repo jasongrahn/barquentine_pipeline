@@ -1,6 +1,6 @@
 # Stack Rank — Active Backlog
 
-Last updated: 2026-05-23 (Phase F remaining issues resolved: word-overlap grounding fallback; attorrnash aliases → Adernash/Cartamancer/Cardamancer; location system prompt `connections` field removed to match schema v2. Next: F1 wet run with new alias mapping; F0 Bug #15260 verification; P1 git_commit.R fix).
+Last updated: 2026-05-23 (git_commit.R bug fixed: gert git_add now uses git_status enumeration + .obsidian filter + note-path assertion. 1219 tests pass. Next: F1 wet run with new alias mapping; F0 Bug #15260 verification; s02e36 agentic session flow).
 
 Single-page checklist. Detail entries live in `docs/ideas.md`,
 `docs/phase_next_backlog.md`, and `docs/phase_agentic_extraction_integration.md` —
@@ -63,9 +63,10 @@ move to bottom of its section, don't delete.
   [phase_gemma4_optimization.md → P1 section]
 - [ ] **Consolidate the two Shiny apps into one `app.R`** — reviewer friction
   before broader rollout. [ideas.md → "Consolidate the two Shiny apps"]
-- [ ] **`R/git_commit.R` bug** — vault commits don't include note files;
-  worked around manually on the s02e34 publish.
-  [ideas.md → "Fix `R/git_commit.R`"]
+- [x] **`R/git_commit.R` bug** — fixed 2026-05-23. `git_add(".", ...)` in gert
+  doesn't recursively stage untracked files. Now enumerates `git_status()$file`,
+  filters `.obsidian/`, stages explicitly, and errors if no note paths are staged.
+  1219 tests pass. [ideas.md → "Fix `R/git_commit.R`"]
 - [ ] **`doc_registry.csv` as targets file dependency** — [ideas.md → P1]
 - [ ] **Markdown format validation (pre/post-write)** —
   [phase_next_backlog.md §1]
