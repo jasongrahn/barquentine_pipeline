@@ -71,7 +71,7 @@ move to bottom of its section, don't delete.
   doesn't recursively stage untracked files. Now enumerates `git_status()$file`,
   filters `.obsidian/`, stages explicitly, and errors if no note paths are staged.
   1219 tests pass. [ideas.md → "Fix `R/git_commit.R`"]
-- [ ] **`doc_registry.csv` as targets file dependency** — [ideas.md → P1]
+- [x] **`doc_registry.csv` as targets file dependency** — added `tar_target(doc_registry_file, DOC_REGISTRY_PATH, format = "file")` to `_targets.R`; `fetch_all_episode_docs()` now receives the tracked path, so changing the registry correctly invalidates the cache. (2026-05-23) [ideas.md → P1]
 - [ ] **Markdown format validation (pre/post-write)** —
   [phase_next_backlog.md §1]
 

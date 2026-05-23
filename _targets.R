@@ -44,9 +44,11 @@ list(
   # The fetch updates the registry cache for everything new in the folder, but
   # only the current session's sections feed the inner loop (one-session-at-a-time
   # rollout per docs/recursive_critic_loop_design.md "Strict session ordering").
+  tar_target(doc_registry_file, DOC_REGISTRY_PATH, format = "file"),
+
   tar_target(source_b_sections_all,
              fetch_all_episode_docs(EPISODE_NOTES_FOLDER_ID,
-                                    DOC_REGISTRY_PATH,
+                                    doc_registry_file,
                                     VAULT_PATH),
              format = "rds"),
 
