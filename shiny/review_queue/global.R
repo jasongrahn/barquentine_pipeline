@@ -17,12 +17,15 @@ setwd(PROJECT_ROOT)
 source("config.R")
 source("R/queue.R")
 source("R/writer.R")
+source("R/review.R")
+source("R/training.R")
 source("R/merge.R")
 source("R/wikilinks.R")
 source("R/extract.R")
 source("R/critic.R")
 source("R/ollama.R")
 source("R/claude.R")
+source("shiny/iteration_metadata.R")
 source("shiny/review_queue/R/sidebar.R")
 source("shiny/review_queue/R/critic_card.R")
 source("shiny/review_queue/R/diff_view.R")
@@ -38,8 +41,9 @@ source("shiny/review_queue/R/render_location.R")
 source("shiny/review_queue/R/render_faction.R")
 source("shiny/review_queue/R/render_dispatch.R")
 
-QUEUE_PATH_ABS <- file.path(PROJECT_ROOT, REVIEW_QUEUE_PATH)
-VAULT_PATH_ABS <- VAULT_PATH  # already absolute in config.R
+QUEUE_PATH_ABS    <- file.path(PROJECT_ROOT, REVIEW_QUEUE_PATH)
+VAULT_PATH_ABS    <- VAULT_PATH  # already absolute in config.R
+TRAINING_PATH_ABS <- file.path(PROJECT_ROOT, TRAINING_DATA_PATH)
 
 .nc <- function(x, default = "") if (is.null(x) || (length(x) == 1 && is.na(x))) default else x
 

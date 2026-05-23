@@ -98,13 +98,15 @@ Per-stage internals (paths 1 and 2 only — path 3 bypasses generator + critic):
    - `flagged`/`rejected` → review queue
    - `agentic_no_critic` (path 3 only) → always review queue, no auto-approve
 
-4. **Review queue + Shiny UIs** — Pending items land in `review_queue/queue.csv`.
-   Two Shiny apps coexist:
-   - `shiny/app.R` (port 7474) — original session-note review UI.
-   - `shiny/review_queue/app.R` — Phase 4.5 entity-note review UI with sidebar
-     groups (Failed Generation, NPCs, Locations, Factions), regenerate modal,
-     Merge action (collapses captain + the_captain → basil and writes an alias
-     into the target's frontmatter), diff view, and per-entity critic-finding cards.
+4. **Review queue + Shiny UI** — Pending items land in `review_queue/queue.csv`.
+   Single canonical app: `shiny/review_queue/app.R` (port 7474). Handles sessions,
+   NPCs, Locations, and Factions in one sidebar-grouped view. Features: sidebar
+   groups (Sessions, Failed Generation, NPCs, Locations, Factions), regenerate
+   modal, Merge action (collapses captain + the_captain → basil and writes an alias
+   into the target's frontmatter), diff view, per-entity critic-finding cards,
+   iteration badges for critic-loop path sessions, and training data capture on
+   every approve/reject action.
+   `shiny/app.R` is retired — kept for reference only, do not run it.
 
    Entity notes are checked against `config/entity_exclusions.csv` (legacy slug
    drop list) and a new entity-type drop list (rows where

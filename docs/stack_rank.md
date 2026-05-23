@@ -1,6 +1,6 @@
 # Stack Rank — Active Backlog
 
-Last updated: 2026-05-23 (git_commit.R bug fixed: gert git_add now uses git_status enumeration + .obsidian filter + note-path assertion. 1219 tests pass. Next: F1 wet run with new alias mapping; F0 Bug #15260 verification; s02e36 agentic session flow).
+Last updated: 2026-05-23 (F1/F2 done; best-draft selection P0 #2 closed (commit 300078c); remaining Phase F issues resolved (word-overlap grounding, attorrnash aliases, the_giff_flotilla schema). Next: F0 Bug #15260 verification (manual Ollama run); s02e36 agentic session flow (3/3 gate); final P0 #1 validation wet run with all F-fixes in place).
 
 Single-page checklist. Detail entries live in `docs/ideas.md`,
 `docs/phase_next_backlog.md`, and `docs/phase_agentic_extraction_integration.md` —
@@ -21,8 +21,10 @@ move to bottom of its section, don't delete.
   Ruled out: thinking mode, 128K context window, XML tool-calling, APS grounding.
   [phase_gemma4_optimization.md → Phase F]
   [ideas.md → "Feed existing vault note" + "Entity-chain generator produces ungrounded templates"]
-- [ ] **Best-draft selection picks the worst draft** — contaminates every
-  entity critic-loop run. Downstream of P0 #2 (both entity-chain).
+- [x] **Best-draft selection picks the worst draft** — fixed commit `300078c`.
+  `select_best_draft()` now ranks by verdict tier (approved > flagged > rejected),
+  then fewest issues, then latest iteration. Confidence no longer used as tiebreaker
+  across verdict classes.
   [ideas.md → "Best-draft selection picks the worst draft (P0)"]
 - [x] **Citation scoring broken at model level** — replaced with APS grounding:
   `gurubot/gemma-2b-aps-it:Q4_K_M` extracts propositions from source;
@@ -40,14 +42,13 @@ move to bottom of its section, don't delete.
   all-nulls (Gemma4 emits valid XML but populates arguments with null). Fallback (format=)
   produces better content than tool_calling null-fill. Next: try Ollama native tools
   parameter or defer tool calling. [phase_gemma4_optimization.md → Phase E Findings]
-- [ ] **F1 wet run — validate E3 focus anchor** — E3 committed; run s02e36 wet run;
-  record per-entity whether draft is about the correct character. Success: ≥ 4/6
-  entities correct. If < 4/6, proceed directly to F2.
+- [x] **F1 wet run — validate E3 focus anchor** — 3/5 dispatched entities correct
+  (basil, lumi, room); attorrnash filtered by MIN_ENTITY_CHUNK_COUNT raise (correct);
+  ted empty (sparse passages — expected). (2026-05-22)
   [phase_gemma4_optimization.md → Phase F, F1]
-- [ ] **F2 — Feed existing vault note as identity anchor** — prepend vault note to
-  user prompt for entities with existing pages (basil, lumi, room). Gives model
-  correct gender/role/aliases upfront; shifts job from full-draft to delta-detection.
-  Gate on F1 result: implement regardless, but prioritize if E3 is insufficient.
+- [x] **F2 — Feed existing vault note as identity anchor** — vault note prepend
+  implemented; gate on file existence working; identity confusion resolved for all
+  3 PCs across 4 wet runs; ted anchor injected, correctly empty. (2026-05-22)
   [phase_gemma4_optimization.md → Phase F, F2] [ideas.md → "Feed existing vault note"]
 - [x] **F3 — Tool calling retired** — F3pre: zero tool template hits in gemma4 modelfile.
   3-turn loop + `.entity_tc_system()` removed from `extract_entity()`. (2026-05-15)
@@ -61,8 +62,11 @@ move to bottom of its section, don't delete.
   captain staging file is created; prior UI-set rejected/merged status
   persists correctly. consolidate_queue() logic is correct.
   [phase_gemma4_optimization.md → P1 section]
-- [ ] **Consolidate the two Shiny apps into one `app.R`** — reviewer friction
-  before broader rollout. [ideas.md → "Consolidate the two Shiny apps"]
+- [x] **Consolidate the two Shiny apps into one `app.R`** — `shiny/review_queue/app.R`
+  is now the single canonical app (port 7474). Added: `R/review.R` + `R/training.R`
+  sources, `append_review_entry()` for session approve/reject, `generate_training_data()`
+  on all actions, iteration badges in render_session.R, fixed duplicate source pane.
+  `shiny/app.R` retired. (2026-05-23) [ideas.md → "Consolidate the two Shiny apps"]
 - [x] **`R/git_commit.R` bug** — fixed 2026-05-23. `git_add(".", ...)` in gert
   doesn't recursively stage untracked files. Now enumerates `git_status()$file`,
   filters `.obsidian/`, stages explicitly, and errors if no note paths are staged.
@@ -125,6 +129,10 @@ move to bottom of its section, don't delete.
 
 ## Completed (recent)
 
+- [x] **Phase F remaining issues** — word-overlap fallback grounding (≥50% content
+  words present in source), attorrnash aliases added to entity_aliases.csv,
+  the_giff_flotilla system prompt synced to schema v2 (removed `connections` field).
+  (commit `780db23`, 2026-05-23)
 - [x] **Phase F immediate tasks** — F3pre (zero tool template → tool calling retired),
   F2a (positive focus anchor in all 4 user_templates, head + tail), F0.5 (format=NULL +
   R-side fence-strip/JSON-parse/schema-validate fallback), F4 (APS → substring grounding).

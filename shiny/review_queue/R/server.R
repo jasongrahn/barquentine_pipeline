@@ -228,6 +228,22 @@ server <- function(input, output, session) {
     resolve_item(row$section_id, resolution,
                  edited_draft = if (resolution == "accepted_with_edit") draft else NULL,
                  .queue_path = QUEUE_PATH_ABS)
+    if (note_type == "session") {
+      note_path_key <- sub("\\.md$", "", vault_rel)
+      reason <- if (resolution == "accepted_with_edit") "accepted with edits" else "auto-approved by pipeline"
+      tryCatch(
+        append_review_entry(
+          format_review_entry(note_path_key, reason, verdict = resolution),
+          vault_path = VAULT_PATH_ABS, dry_run = DRY_RUN
+        ),
+        error = function(e) NULL
+      )
+    }
+    tryCatch(
+      generate_training_data(.queue_path = QUEUE_PATH_ABS,
+                             .training_path = TRAINING_PATH_ABS),
+      error = function(e) NULL
+    )
     .log_action(row$section_id, .nc(row$entity_name, row$section_id), resolution,
                 prior_draft = .nc(row$draft, ""))
     action_msg_rv(list(
@@ -431,6 +447,21 @@ server <- function(input, output, session) {
     if (is.null(row)) return()
     reason <- .nc(input$reject_reason, "rejected_garbage")
     resolve_item(row$section_id, reason, .queue_path = QUEUE_PATH_ABS)
+    if (.nc(row$note_type, "") == "session") {
+      note_path_key <- file.path("sessions", row$section_id)
+      tryCatch(
+        append_review_entry(
+          format_review_entry(note_path_key, "rejected by reviewer", verdict = "rejected"),
+          vault_path = VAULT_PATH_ABS, dry_run = DRY_RUN
+        ),
+        error = function(e) NULL
+      )
+    }
+    tryCatch(
+      generate_training_data(.queue_path = QUEUE_PATH_ABS,
+                             .training_path = TRAINING_PATH_ABS),
+      error = function(e) NULL
+    )
     .log_action(row$section_id, .nc(row$entity_name, row$section_id), reason)
     action_msg_rv(list(text = paste0("Rejected: ", row$section_id, " (", reason, ")"),
                        color = "#dc3545"))

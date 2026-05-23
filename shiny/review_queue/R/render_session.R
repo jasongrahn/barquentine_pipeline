@@ -19,6 +19,15 @@ render_session_review <- function(row) {
     rejected = "verdict-rejected", ""
   )
 
+  iter_badges <- tryCatch(
+    .format_iteration_badges(
+      iteration_count    = row$iteration_count,
+      claude_used        = row$claude_used,
+      iteration_log_json = row$iteration_log
+    ),
+    error = function(e) NULL
+  )
+
   tagList(
     fluidRow(
       column(8,
@@ -26,6 +35,7 @@ render_session_review <- function(row) {
           tags$span(style = "font-size:0.65em;color:#666;font-weight:400;margin-left:8px;",
                     "SESSION")
         ),
+        iter_badges,
         tags$div(style = "font-size:0.82em;color:#555;",
           "Will be written to: ", tags$code(vault_rel),
           tags$span(style = "margin-left:8px;",
@@ -43,20 +53,13 @@ render_session_review <- function(row) {
 
     fluidRow(
       column(6,
-        tags$h6("Source B \u2014 Google Doc Recap"),
+        tags$h6("Source Text"),
         .render_source_pane(source_text, entity_name)
       ),
       column(6,
-        tags$details(
-          tags$summary(style = "cursor:pointer;font-size:0.85em;color:#555;margin-bottom:4px;",
-                       "Raw VTT \u25BC (collapsed)"),
-          .render_source_pane(source_text, entity_name)
-        )
+        tags$h6("Draft"),
+        .render_draft_pane(draft_text, entity_id)
       )
-    ),
-    tags$div(style = "margin-top:14px;",
-      tags$h6("Draft"),
-      .render_draft_pane(draft_text, entity_id)
     ),
     if (length(issues) > 0)
       render_critic_cards_with_actions(issues, src_quotes, dismissed),
