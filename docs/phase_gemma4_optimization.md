@@ -50,11 +50,17 @@ IMMEDIATE — DONE (2026-05-22):
   F2    DONE — vault note prepend implemented; gate working; identity confusion resolved
               for all 3 PCs across 4 wet runs; ted anchor injected, correctly empty
 
-REMAINING ISSUES (deferred):
-  coverage_score=0  substring match too strict for paraphrased claims; need looser match
-  attorrnash        name may be spelled differently in VTT passages; grep to confirm
-  the_giff_flotilla location schema validation failure; check required fields vs gemma4 output
-  ted               empty draft is correct behavior (barely appears in s02e36)
+REMAINING ISSUES — RESOLVED (2026-05-23):
+  coverage_score=0  FIXED — word-overlap fallback added to .is_claim_grounded() in
+                    agentic_entity_fact_check.R. Level 1: exact substring; Level 2: ≥50%
+                    of content words (≥4 chars) present in source. 27/27 tests pass.
+  attorrnash        FIXED — confirmed VTT uses "Adernash" and "Cartamancer/Cardamancer".
+                    Aliases added to config/entity_aliases.csv; entity will collect
+                    passages on next run instead of being filtered.
+  the_giff_flotilla FIXED — system prompt 07_extract_location/system.md listed `connections`
+                    field dropped in schema v2. Removed from prompt; schema and prompt
+                    now match (description, region, notable_features, events_witnessed only).
+  ted               no action — empty draft is correct behavior (sparse passages in s02e36)
 
 DEFER:
   Phase G (two-pass) — only if F2/F2a/F3 insufficient

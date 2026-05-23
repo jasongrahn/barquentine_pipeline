@@ -1,6 +1,6 @@
 # Stack Rank — Active Backlog
 
-Last updated: 2026-05-15 (Phase F immediate tasks done: F3pre zero hits → tool calling retired; F2a positive focus anchor in all 4 templates; F0.5 format=NULL + R-side parse; F4 APS replaced by source-sentence substring. F0 Bug #15260 verification pending manual run. F1 wet run is next action).
+Last updated: 2026-05-23 (Phase F remaining issues resolved: word-overlap grounding fallback; attorrnash aliases → Adernash/Cartamancer/Cardamancer; location system prompt `connections` field removed to match schema v2. Next: F1 wet run with new alias mapping; F0 Bug #15260 verification; P1 git_commit.R fix).
 
 Single-page checklist. Detail entries live in `docs/ideas.md`,
 `docs/phase_next_backlog.md`, and `docs/phase_agentic_extraction_integration.md` —

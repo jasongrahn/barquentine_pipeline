@@ -99,6 +99,26 @@ test_that("returns expected field names", {
                     "aps_proposition_count", "pipeline_path") %in% names(result)))
 })
 
+test_that("paraphrased claim with high word overlap is matched", {
+  result <- fact_check_entity(
+    entity_id       = "attorrnash",
+    draft_markdown  = "Attorrnash is a soldier posted near the Giff Flotilla region.",
+    source_passages = make_passages()
+  )
+  expect_equal(result$coverage_score, 1.0)
+  expect_length(result$matched_claims, 1L)
+})
+
+test_that("paraphrased claim with low word overlap is unmatched", {
+  result <- fact_check_entity(
+    entity_id       = "attorrnash",
+    draft_markdown  = "Attorrnash commands armies of darkness from a shadowy citadel.",
+    source_passages = make_passages()
+  )
+  expect_equal(result$coverage_score, 0.0)
+  expect_length(result$unmatched_claims, 1L)
+})
+
 test_that("no ollama_generate call is made (pure R, no LLM)", {
   # fact_check_entity must not call ollama_generate; stub it to error if called
   assign("ollama_generate", function(...) stop("should not be called"), envir = globalenv())

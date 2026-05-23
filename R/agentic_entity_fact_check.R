@@ -39,6 +39,23 @@ suppressPackageStartupMessages({
   claims
 }
 
+# Two-level claim grounding check:
+#   Level 1 — exact substring match (fast; catches direct quotes)
+#   Level 2 — word-overlap fallback for paraphrased claims: a claim is grounded
+#              when >= OVERLAP_THRESHOLD fraction of its content words (>= 4 chars)
+#              appear anywhere in the source text.
+.WORD_OVERLAP_THRESHOLD <- 0.5
+
+.is_claim_grounded <- function(claim, source_text,
+                                threshold = .WORD_OVERLAP_THRESHOLD) {
+  if (str_detect(source_text, fixed(claim, ignore_case = TRUE))) return(TRUE)
+  claim_words <- str_extract_all(tolower(claim), "\\b[a-z]{4,}\\b")[[1]]
+  if (length(claim_words) == 0L) return(FALSE)
+  source_lower <- tolower(source_text)
+  n_matched <- sum(str_detect(source_lower, paste0("\\b", claim_words, "\\b")))
+  n_matched / length(claim_words) >= threshold
+}
+
 .count_source_sentences <- function(source_text) {
   if (!nzchar(trimws(source_text))) return(0L)
   sentences <- str_split(source_text, "[.!?]\\s+|\n")[[1]]
@@ -68,9 +85,8 @@ fact_check_entity <- function(entity_id,
     ))
   }
 
-  # Direction: claim inside source_text (NOT proposition inside claim)
   is_matched <- vapply(claims, function(claim) {
-    str_detect(source_text, fixed(claim, ignore_case = TRUE))
+    .is_claim_grounded(claim, source_text)
   }, logical(1))
 
   list(
