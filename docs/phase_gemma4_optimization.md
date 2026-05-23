@@ -50,6 +50,16 @@ IMMEDIATE — DONE (2026-05-22):
   F2    DONE — vault note prepend implemented; gate working; identity confusion resolved
               for all 3 PCs across 4 wet runs; ted anchor injected, correctly empty
 
+P1 COMPLETIONS (2026-05-23):
+  Shiny consolidation DONE — review_queue/app.R is single canonical UI (port 7474).
+                    Added R/review.R + R/training.R + iteration_metadata.R to global.R;
+                    append_review_entry() for sessions; generate_training_data() on all
+                    approve/reject actions; fixed duplicate source pane in render_session.R;
+                    iteration badges. shiny/app.R retired. (commit e314fd9)
+  doc_registry.csv  DONE — tar_target(doc_registry_file, ..., format="file") added to
+                    _targets.R. No more manual tar_invalidate() after CURRENT_SESSION
+                    changes. (commit 7e6d18f)
+
 REMAINING ISSUES — RESOLVED (2026-05-23):
   coverage_score=0  FIXED — word-overlap fallback added to .is_claim_grounded() in
                     agentic_entity_fact_check.R. Level 1: exact substring; Level 2: ≥50%
