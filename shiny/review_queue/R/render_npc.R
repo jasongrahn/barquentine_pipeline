@@ -1,8 +1,9 @@
 .render_field <- function(label, value, empty_label = "\u2014") {
-  val <- if (is.null(value) || (length(value) == 1 && (is.na(value) || !nzchar(trimws(as.character(value))))))
+  val <- if (is.null(value) || length(value) == 0 ||
+             (length(value) == 1 && (is.na(value) || !nzchar(trimws(as.character(value))))))
     tags$em(style = "color:#aaa;", empty_label)
   else
-    as.character(value)
+    paste(as.character(value), collapse = ", ")
 
   tags$div(style = "margin-bottom:6px;",
     tags$span(style = "font-size:0.78em;color:#888;font-weight:600;text-transform:uppercase;margin-right:6px;",

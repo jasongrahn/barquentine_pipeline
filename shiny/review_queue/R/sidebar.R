@@ -22,8 +22,8 @@ render_sidebar <- function(queue_df, selected_id, total_count = NULL) {
     list(key = "session",   label = "Sessions",  icon = "\U1F4CB",
          filter = function(df) df[!is.na(df$note_type) & df$note_type == "session" &
                                     !df$status %in% c("generation_failed"), ]),
-    list(key = "npc",       label = "NPCs",      icon = "\U1F465",
-         filter = function(df) df[!is.na(df$note_type) & df$note_type == "npc" &
+    list(key = "npc",       label = "NPCs & PCs", icon = "\U1F465",
+         filter = function(df) df[!is.na(df$note_type) & df$note_type %in% c("npc", "pc") &
                                     !df$status %in% c("generation_failed"), ]),
     list(key = "location",  label = "Locations", icon = "\U1F4CD",
          filter = function(df) df[!is.na(df$note_type) & df$note_type == "location" &

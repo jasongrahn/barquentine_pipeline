@@ -1,7 +1,7 @@
 server <- function(input, output, session) {
 
   ENTITY_STATUSES <- c("pending", "generation_failed", "critic_rejected")
-  ENTITY_TYPES    <- c("npc", "location", "faction", "session")
+  ENTITY_TYPES    <- c("npc", "pc", "location", "faction", "session")
 
   # ---------------------------------------------------------------------------
   # State

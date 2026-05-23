@@ -4,6 +4,7 @@ Type: {note_type}
 
 Context: {recap_context}
 
+{existing_note_block}
 Target entity: {entity_name} (type: {note_type}). Focus exclusively on this entity. All other characters mentioned in the passages are context, not the subject.
 
 SOURCE PASSAGES

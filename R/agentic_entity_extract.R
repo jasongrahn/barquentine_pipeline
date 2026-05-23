@@ -38,6 +38,19 @@ if (!exists("entity_schema", mode = "function")) {
   )
 }
 
+.vault_subdir <- function(note_type) {
+  switch(note_type, pc = "npcs", npc = "npcs", location = "locations", faction = "factions", "npcs")
+}
+
+# Read existing vault note for identity anchoring (F2). Returns "" when absent or empty.
+.read_vault_note <- function(entity_id, note_type, vault_path = VAULT_PATH) {
+  path <- file.path(vault_path, .vault_subdir(note_type), paste0(entity_id, ".md"))
+  if (!file.exists(path)) return("")
+  content <- tryCatch(paste(readLines(path, warn = FALSE), collapse = "\n"),
+                      error = function(e) "")
+  if (nchar(trimws(content)) == 0L) "" else content
+}
+
 .count_words <- function(text) {
   length(strsplit(trimws(text), "\\s+")[[1L]])
 }
@@ -129,26 +142,38 @@ extract_entity <- function(entity_record,
                   length(entity_record$entity_aliases) > 0L)
     paste(entity_record$entity_aliases, collapse = ", ") else ""
 
+  existing_note <- .read_vault_note(entity_id, note_type)
+  existing_note_block <- if (nchar(existing_note) > 0L) {
+    paste0(
+      "Here is the current wiki page for ", entity_name, ". Use this as an identity anchor",
+      " \u2014 the gender, role, and relationships listed here are established facts. Extract",
+      " only new information from the passages below that adds to or contradicts this page.\n\n",
+      "EXISTING NOTE:\n", existing_note, "\n\n---\n"
+    )
+  } else ""
+
   skill  <- .entity_skill_name(note_type)
   system <- .load_skill(skill, "system", skills_dir)
   user   <- glue(
     .load_skill(skill, "user_template", skills_dir),
-    entity_name     = entity_name,
-    aliases         = aliases,
-    note_type       = note_type,
-    recap_context   = recap_context,
-    source_passages = numbered_passages,
+    entity_name          = entity_name,
+    aliases              = aliases,
+    note_type            = note_type,
+    recap_context        = recap_context,
+    source_passages      = numbered_passages,
+    existing_note_block  = existing_note_block,
     .open = "{", .close = "}"
   )
 
-  # format=NULL + R-side parse (F0.5): fence-strip → JSON parse → schema validate.
+  # format=entity_schema() enforces JSON output — gemma4 reverts to markdown without it.
+  # R-side parse kept as a fallback for any residual malformed output.
   # Tool calling retired (F3pre: gemma4 has no tool template in Ollama modelfile).
   raw <- ollama_generate(
     prompt        = user,
     system_prompt = system,
     model         = model,
     base_url      = base_url,
-    format        = NULL,
+    format        = entity_schema(note_type),
     think         = FALSE
   )
   timed_out  <- is.list(raw) && isTRUE(raw$timed_out)
@@ -158,5 +183,5 @@ extract_entity <- function(entity_record,
        note_type     = note_type,
        extraction    = extraction,
        timed_out     = timed_out,
-       pipeline_path = "format_null")
+       pipeline_path = "substring_grounding")
 }

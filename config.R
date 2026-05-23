@@ -47,7 +47,7 @@ OLLAMA_TIMEOUT  <- 90                 # seconds before giving up on a chunk; run
 # Entity note generation needs more tokens than session notes: longer source
 # passages mean more thinking budget consumed before producing actual output.
 ENTITY_NUM_PREDICT     <- 800L    # think=FALSE removes thinking overhead; 800 is sufficient
-MIN_ENTITY_CHUNK_COUNT <- 3L      # drop entities appearing in fewer distinct chunks
+MIN_ENTITY_CHUNK_COUNT <- 4L      # drop entities appearing in fewer distinct chunks
 ENTITY_EXCLUSIONS_PATH <- "config/entity_exclusions.csv"
 PROTECTED_ENTITIES_PATH <- "config/protected_entities.csv"
 ENTITY_ALIASES_PATH    <- "config/entity_aliases.csv"

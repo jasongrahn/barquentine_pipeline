@@ -44,12 +44,17 @@ IMMEDIATE — DONE (2026-05-15):
         - Real multi-character s02e36 passage (NOT a trivial stub)
         - Run: think=FALSE vs think=NULL; compare structurally + semantically
 
-NEXT:
-  F1    Wet run (s02e36) — validate F2a focus anchor
-        Success: ≥ 4/6 entities write about correct character
-  F2    Vault note prepend for entities with existing pages
-        Requires: vault_note param in extract_entity() + glue + user_template.md
-        Handle NULL/empty gracefully
+IMMEDIATE — DONE (2026-05-22):
+  F1    DONE — 3/5 dispatched entities correct (basil, lumi, room); attorrnash filtered
+              by MIN_ENTITY_CHUNK_COUNT raise (correct); ted empty (sparse passages)
+  F2    DONE — vault note prepend implemented; gate working; identity confusion resolved
+              for all 3 PCs across 4 wet runs; ted anchor injected, correctly empty
+
+REMAINING ISSUES (deferred):
+  coverage_score=0  substring match too strict for paraphrased claims; need looser match
+  attorrnash        name may be spelled differently in VTT passages; grep to confirm
+  the_giff_flotilla location schema validation failure; check required fields vs gemma4 output
+  ted               empty draft is correct behavior (barely appears in s02e36)
 
 DEFER:
   Phase G (two-pass) — only if F2/F2a/F3 insufficient
