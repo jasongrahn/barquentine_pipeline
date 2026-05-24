@@ -11,6 +11,7 @@ server <- function(input, output, session) {
   action_msg_rv <- reactiveVal(NULL)
   action_log_rv      <- reactiveVal(list())
   pending_approve_rv <- reactiveVal(NULL)
+  format_warn_rv     <- reactiveVal(NULL)
 
   .log_action <- function(section_id, entity_name, label, prior_draft = NULL,
                            was_merged = FALSE) {
@@ -135,7 +136,8 @@ server <- function(input, output, session) {
 
     tagList(
       render_review_pane(row),
-      uiOutput("action_msg_ui")
+      uiOutput("action_msg_ui"),
+      uiOutput("format_warn_ui")
     )
   })
 
@@ -144,6 +146,37 @@ server <- function(input, output, session) {
     if (is.null(msg)) return(NULL)
     tags$p(style = paste0("color:", msg$color, ";margin-top:8px;font-size:0.9em;"),
            msg$text)
+  })
+
+  output$format_warn_ui <- renderUI({
+    fw <- format_warn_rv()
+    if (is.null(fw)) return(NULL)
+    tags$div(
+      style = paste0("margin-top:10px;padding:10px 14px;border:1px solid #fd7e14;",
+                     "border-radius:4px;background:#fff8f0;"),
+      tags$strong(style = "color:#c85a00;", "Format issues — review before writing:"),
+      tags$ul(style = "margin:6px 0 10px 0;padding-left:18px;font-size:0.88em;",
+              lapply(fw$issues, tags$li)),
+      actionButton("format_warn_write_anyway", "Write anyway",
+                   class = "btn-warning btn-sm")
+    )
+  })
+
+  observeEvent(input$format_warn_write_anyway, {
+    fw <- format_warn_rv()
+    if (is.null(fw)) return()
+    format_warn_rv(NULL)
+    tryCatch(
+      .resolve_write(fw$row, fw$draft, fw$resolution, fw$vault_rel),
+      error = function(e) action_msg_rv(list(
+        text = paste0("Error: ", conditionMessage(e)), color = "#dc3545"))
+    )
+  })
+
+  # Clear format warning when the reviewer navigates to a different entity.
+  observe({
+    selected_id()
+    format_warn_rv(NULL)
   })
 
   # ---------------------------------------------------------------------------
@@ -288,8 +321,18 @@ server <- function(input, output, session) {
 
     resolution <- if (tab %in% c("Edit", "Raw markdown")) "accepted_with_edit" else "accepted"
 
+    format_warn_rv(NULL)
+
     if (note_type == "session") {
       vault_rel <- file.path("sessions", paste0(entity_id, ".md"))
+      vr <- validate_note_format(draft, "session")
+      if (!vr$valid) {
+        format_warn_rv(list(issues = vr$issues, row = row, draft = draft,
+                            resolution = resolution, vault_rel = vault_rel))
+        action_msg_rv(list(text = "Format issues found \u2014 see below.",
+                           color = "#fd7e14"))
+        return()
+      }
       tryCatch(
         .resolve_write(row, draft, resolution, vault_rel),
         error = function(e) action_msg_rv(list(
@@ -348,6 +391,16 @@ server <- function(input, output, session) {
     err <- validate_rename_slug(slug, note_type, VAULT_PATH_ABS)
     if (!is.null(err)) {
       action_msg_rv(list(text = paste0("Slug error: ", err), color = "#dc3545"))
+      return()
+    }
+
+    # Pre-write format validation for entity notes
+    vr <- validate_note_format(draft, note_type)
+    if (!vr$valid) {
+      format_warn_rv(list(issues = vr$issues, row = row, draft = draft,
+                          resolution = resolution, vault_rel = vault_rel))
+      action_msg_rv(list(text = "Format issues found \u2014 see below.",
+                         color = "#fd7e14"))
       return()
     }
 
