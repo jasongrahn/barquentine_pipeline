@@ -56,22 +56,10 @@ entity_schema_version <- function() AGENTIC_ENTITY_SCHEMA_VERSION  # v2
       description           = .valued_field(),
       aliases               = list(type = "array", items = list(type = "string")),
       exhibited_personality = .valued_field(),
-      role_in_story         = .valued_field(),
-      relatives             = list(
-        type  = "array",
-        items = list(
-          type       = "object",
-          properties = list(
-            name     = list(type = "string"),
-            relation = list(type = "string"),
-            line     = list(type = c("integer", "null"))
-          ),
-          required = c("name", "relation", "line")
-        )
-      )
+      role_in_story         = .valued_field()
     ),
     required = c("bio", "description", "aliases", "exhibited_personality",
-                 "role_in_story", "relatives")
+                 "role_in_story")
   )
 }
 
