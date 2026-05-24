@@ -119,6 +119,19 @@ move to bottom of its section, don't delete.
 - [ ] Auto-evolving rejection-category chips — [ideas.md]
 - [ ] YouTube transcript fetcher — [ideas.md → P2 there, P3 here]
 - [ ] Run Pipeline button in Shiny — [phase_next_backlog.md §4]
+- [ ] **Slug helper consolidation** — `make_slug()` (R/source_c.R) and
+  `agentic_slug()` (R/agentic_extract.R) do the same thing; merge into one
+  shared function. Cleanup branch.
+- [ ] **YAML frontmatter parsing centralisation** — frontmatter read/write
+  is scattered across writer.R, validator.R, and Shiny; extract a shared
+  `parse_frontmatter()` / `format_frontmatter()` pair. Cleanup branch.
+- [ ] **queue.csv schema centralisation** — column definitions duplicated
+  across writer.R, training.R, and shiny/review_queue; extract a single
+  `queue_schema()` source of truth. Cleanup branch.
+- [ ] **Agentic function prefix consistency** — `extract_chunk`,
+  `postprocess_extracted`, etc. use mixed naming conventions across
+  agentic_*.R files; align to a consistent verb_noun pattern.
+  Cleanup branch.
 
 ## P4 — Deferred / not-yet-justified
 
