@@ -82,7 +82,7 @@ TRAINING_DATA_PATH <- "training_data"
 # Pipeline state
 # -----------------------------------------------------------------------------
 # Update CURRENT_SESSION before each run
-CURRENT_SESSION <- "s02e36"          # ← update this each session (s01e01 zero-padded format)
+CURRENT_SESSION <- "s02e37"          # ← update this each session (s01e01 zero-padded format)
 
 # Set TRUE to write to /tmp/barquentine-preview/ instead of vault
 # Always do a dry run first when testing new extraction prompts

@@ -1,6 +1,6 @@
 # Stack Rank — Active Backlog
 
-Last updated: 2026-05-23 (P0 #1 entity wet run complete — 5/6 gate cleared: basil/lumi/room PASS, giff_flotilla FAIL template, attorrnash/ted correctly empty; F2 vault anchor resolved basil identity confusion). Next: (1) user approves s02e36__agentic in Shiny → DRY_RUN=FALSE → tar_make() → vault commit → 3/3 gate closes; (2) giff_flotilla failure noted as remaining entity quality issue — no vault anchor exists for it.
+Last updated: 2026-05-24 (Wet run #3 complete — s02e37, schema v2. lumi=1.0 (full pass), room=0.5 (partial), basil/attorrnash/giff_flotilla=0. Schema fixes confirmed: `line:{}` bug resolved for basil (real draft content), all-passages check resolved lumi. Remaining zeros: attorrnash=data sparsity (not in s02e37); basil/giff_flotilla=vague claim generation. Next candidate fix: vault anchor injection for location entities (same as F2 for PCs).)
 
 Single-page checklist. Detail entries live in `docs/ideas.md`,
 `docs/phase_next_backlog.md`, and `docs/phase_agentic_extraction_integration.md` —
