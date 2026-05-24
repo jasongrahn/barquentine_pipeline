@@ -1,6 +1,6 @@
 # Stack Rank — Active Backlog
 
-Last updated: 2026-05-23 (session note orientation complete; entity_aliases_file tracker fix landed in _targets.R; pre-fix wet run assessed: lumi+room PASS, basil+giff_flotilla FAIL, attorrnash+ted empty). Next: (1) user approves s02e36__agentic in Shiny → DRY_RUN=FALSE → tar_make() → vault commit → 3/3 gate closes; (2) run tar_invalidate("alias_registry") + tar_make() to get fresh entity extractions with all F-fixes; (3) F0 Bug #15260 verification (manual Ollama run, lowest priority).
+Last updated: 2026-05-23 (P0 #1 entity wet run complete — 5/6 gate cleared: basil/lumi/room PASS, giff_flotilla FAIL template, attorrnash/ted correctly empty; F2 vault anchor resolved basil identity confusion). Next: (1) user approves s02e36__agentic in Shiny → DRY_RUN=FALSE → tar_make() → vault commit → 3/3 gate closes; (2) giff_flotilla failure noted as remaining entity quality issue — no vault anchor exists for it.
 
 Single-page checklist. Detail entries live in `docs/ideas.md`,
 `docs/phase_next_backlog.md`, and `docs/phase_agentic_extraction_integration.md` —
@@ -11,14 +11,11 @@ move to bottom of its section, don't delete.
 
 ## P0 — Must-do / blockers
 
-- [ ] **Entity-chain generator regression** — root cause is identity confusion:
-  Gemma4 writes about the most prominent character in multi-character VTT passages,
-  not the target entity. 4/6 entities show this in s02e36. Blocks entity publishing.
-  F2a positive focus anchor landed (replaces E3 negation framing; added at start +
-  end of prompt for recency bias); F0.5 format=NULL + R-side parse in place;
-  F4 APS replaced by substring grounding. F1 wet run validates all three.
-  Next lever if F1 < 4/6: F2 vault note prepend (gives model correct gender/role upfront).
-  Ruled out: thinking mode, 128K context window, XML tool-calling, APS grounding.
+- [x] **Entity-chain generator regression** — Phase F complete. 5/6 gate cleared
+  (2026-05-23): basil/lumi/room PASS, attorrnash/ted correctly empty, giff_flotilla
+  FAIL (template — no vault note anchor exists). F2 vault note prepend resolved basil
+  identity confusion; F2a focus anchor + F4 substring grounding in place.
+  Remaining: giff_flotilla needs a seed vault note before it can pass (new entity, no anchor).
   [phase_gemma4_optimization.md → Phase F]
   [ideas.md → "Feed existing vault note" + "Entity-chain generator produces ungrounded templates"]
 - [x] **Best-draft selection picks the worst draft** — fixed commit `300078c`.
