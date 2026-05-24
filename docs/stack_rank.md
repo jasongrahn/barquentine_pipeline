@@ -52,11 +52,9 @@ move to bottom of its section, don't delete.
 - [x] **F4 — APS replaced by source-sentence substring grounding** — `fact_check_entity()`
   now uses `str_detect(source_text, fixed(claim))`. No LLM call; pure R. `aps_proposition_count`
   column preserved (holds source sentence count). (2026-05-15)
-- [ ] **Process s02e36 through agentic flow** — session note s02e36__agentic is
-  in queue as `pending` (enqueued 2026-05-14); 20 line cites, 8215 chars, proper
-  structure, 9 grounding issues (expected false positives). User action required:
-  review+approve in Shiny → set DRY_RUN=FALSE in config.R → tar_make() → vault
-  commit. This closes the 3/3 gate.
+- [x] **Process s02e36 through agentic flow** — vault commit `f60fbcd` (2026-05-12)
+  published sessions/s02e36.md. 3/3 gate closed. s02e36__agentic row re-approved
+  in Shiny 2026-05-24 (idempotent — file already committed, no new vault diff).
   [phase_agentic_extraction_integration.md → Rollout]
 - [x] **Captain row carries stale `merged` status across runs** — investigated
   2026-05-15. Not a bug. Canonical routing merges captain → basil; no

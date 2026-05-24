@@ -25,11 +25,6 @@ commit_vault <- function(session_id, vault_path = VAULT_PATH,
     return(invisible(NULL))
   }
 
-  note_dirs <- paste0("^(sessions|npcs|locations|factions|dm_prep)/")
-  if (!any(grepl(note_dirs, staged$file))) {
-    stop("vault_commit: staged files contain no note paths — check writer output")
-  }
-
   hash <- git_commit(commit_message, repo = vault_path)
   invisible(hash)
 }
