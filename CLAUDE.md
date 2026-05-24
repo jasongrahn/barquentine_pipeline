@@ -2,6 +2,13 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Working principles
+
+1. **Think before coding** — state assumptions explicitly; ask rather than guess; name what's unclear before touching code.
+2. **Simplicity first** — write the minimum code that solves the problem. No speculative features, no premature abstractions, no error handling for impossible scenarios.
+3. **Surgical changes** — only modify what's necessary. Don't improve adjacent code or refactor unbroken things. Match existing style. Note unrelated dead code but don't delete it.
+4. **Goal-driven execution** — define verifiable success criteria before starting (e.g. wet run ≥4/6, tests pass, vault file committed). Loop until met.
+
 ## What this project does
 
 Barquentine Pipeline reads D&D session notes from a Google Doc, generates structured wiki entries via local LLMs (Ollama), fact-checks them, routes results through a Shiny review UI, and commits approved notes to the `barquentine_wiki` vault repo. Human review decisions are captured as JSONL training data for future fine-tuning.
