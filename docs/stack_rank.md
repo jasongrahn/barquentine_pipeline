@@ -1,6 +1,6 @@
 # Stack Rank — Active Backlog
 
-Last updated: 2026-05-23 (F1/F2 done; best-draft selection P0 #2 closed (commit 300078c); remaining Phase F issues resolved (word-overlap grounding, attorrnash aliases, the_giff_flotilla schema). Next: F0 Bug #15260 verification (manual Ollama run); s02e36 agentic session flow (3/3 gate); final P0 #1 validation wet run with all F-fixes in place).
+Last updated: 2026-05-23 (session note orientation complete; entity_aliases_file tracker fix landed in _targets.R; pre-fix wet run assessed: lumi+room PASS, basil+giff_flotilla FAIL, attorrnash+ted empty). Next: (1) user approves s02e36__agentic in Shiny → DRY_RUN=FALSE → tar_make() → vault commit → 3/3 gate closes; (2) run tar_invalidate("alias_registry") + tar_make() to get fresh entity extractions with all F-fixes; (3) F0 Bug #15260 verification (manual Ollama run, lowest priority).
 
 Single-page checklist. Detail entries live in `docs/ideas.md`,
 `docs/phase_next_backlog.md`, and `docs/phase_agentic_extraction_integration.md` —
@@ -55,8 +55,12 @@ move to bottom of its section, don't delete.
 - [x] **F4 — APS replaced by source-sentence substring grounding** — `fact_check_entity()`
   now uses `str_detect(source_text, fixed(claim))`. No LLM call; pure R. `aps_proposition_count`
   column preserved (holds source sentence count). (2026-05-15)
-- [ ] **Process s02e36 through agentic flow** — completes 3/3 gate; agentic
-  can become default. [phase_agentic_extraction_integration.md → Rollout]
+- [ ] **Process s02e36 through agentic flow** — session note s02e36__agentic is
+  in queue as `pending` (enqueued 2026-05-14); 20 line cites, 8215 chars, proper
+  structure, 9 grounding issues (expected false positives). User action required:
+  review+approve in Shiny → set DRY_RUN=FALSE in config.R → tar_make() → vault
+  commit. This closes the 3/3 gate.
+  [phase_agentic_extraction_integration.md → Rollout]
 - [x] **Captain row carries stale `merged` status across runs** — investigated
   2026-05-15. Not a bug. Canonical routing merges captain → basil; no
   captain staging file is created; prior UI-set rejected/merged status
@@ -72,6 +76,7 @@ move to bottom of its section, don't delete.
   filters `.obsidian/`, stages explicitly, and errors if no note paths are staged.
   1219 tests pass. [ideas.md → "Fix `R/git_commit.R`"]
 - [x] **`doc_registry.csv` as targets file dependency** — added `tar_target(doc_registry_file, DOC_REGISTRY_PATH, format = "file")` to `_targets.R`; `fetch_all_episode_docs()` now receives the tracked path, so changing the registry correctly invalidates the cache. (2026-05-23) [ideas.md → P1]
+- [x] **`entity_aliases.csv` as targets file dependency** — added `tar_target(entity_aliases_file, ENTITY_ALIASES_PATH, format = "file")` to `_targets.R`; `build_alias_registry()` now takes the tracked path, so alias CSV changes (e.g. adding Adernash) correctly invalidate `alias_registry` and all downstream entity targets. Same pattern as doc_registry fix. (2026-05-23)
 - [ ] **Markdown format validation (pre/post-write)** —
   [phase_next_backlog.md §1]
 

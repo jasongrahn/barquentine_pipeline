@@ -58,7 +58,10 @@ list(
   tar_target(section_ids, names(source_b_sections)),
 
   # --- Alias registry — scanned from vault at pipeline start -----------------
-  tar_target(alias_registry, build_alias_registry(VAULT_PATH)),
+  # format = "file" tracks entity_aliases.csv hash so alias changes invalidate
+  # alias_registry and all downstream entity targets automatically.
+  tar_target(entity_aliases_file, ENTITY_ALIASES_PATH, format = "file"),
+  tar_target(alias_registry, build_alias_registry(VAULT_PATH, entity_aliases_file)),
 
   # --- Few-shot examples — invalidates generator when sft.jsonl changes ------
   # format = "file" tracks the file hash; downstream targets re-run when
