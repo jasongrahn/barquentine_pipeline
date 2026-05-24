@@ -524,7 +524,7 @@ compare against.
 
 ## Consolidate the two Shiny apps into a single `app.R`
 
-**Status:** TODO (small QoL — reviewer-facing UX).
+**Status:** DONE (2026-05-23). `shiny/review_queue/app.R` is the canonical app (port 7474); `shiny/app.R` archived to `docs/archive/legacy_shiny_app.R`.
 
 **Symptom:** There are two distinct Shiny apps:
 - `shiny/app.R` (port 7474) — session-note review UI (handles both

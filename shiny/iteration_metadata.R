@@ -1,5 +1,5 @@
 # Helpers for surfacing recursive-critic-loop metadata on the review card.
-# Loaded by shiny/app.R; pure functions so they are unit-testable.
+# Loaded by shiny/review_queue/app.R; pure functions so they are unit-testable.
 
 library(htmltools)
 library(jsonlite)

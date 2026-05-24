@@ -113,7 +113,7 @@ Per-stage internals (paths 1 and 2 only — path 3 bypasses generator + critic):
    into the target's frontmatter), diff view, per-entity critic-finding cards,
    iteration badges for critic-loop path sessions, and training data capture on
    every approve/reject action.
-   `shiny/app.R` is retired — kept for reference only, do not run it.
+   `shiny/app.R` is archived at `docs/archive/legacy_shiny_app.R`.
 
    Entity notes are checked against `config/entity_exclusions.csv` (legacy slug
    drop list) and a new entity-type drop list (rows where
@@ -204,4 +204,4 @@ blindly — see `LESSONS.md` "Two-chain pc/pc_alias divergence".
   assign("my_fn", function(...) invisible(NULL), envir = globalenv())
   ```
   A plain assignment inside `test_that()` will not be found by the function under test.
-- `tests/testthat/test-git_commit.R` has pre-existing errors that depend on the fixture path `/the/vault` existing. Not a regression; not in current scope. Investigate only if asked.
+- `tests/testthat/test-git_commit.R:204` has a pre-existing test/implementation mismatch: the test expects `commit_vault()` to `stop("no note paths")` when git_status returns no stageable notes, but the implementation uses `message()` + `return(invisible(NULL))`. Not a regression from the 2026-05-23 git_commit bug fix; fix the test expectation or the implementation behaviour. Investigate only if asked.

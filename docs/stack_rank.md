@@ -94,10 +94,9 @@ move to bottom of its section, don't delete.
   `inject_wikilinks`; no API cost; requires `<tool_call>` XML parser in R on
   top of `call_ollama()`). Option (b) preferred given current credit situation.
   [oss_wiki_tools_investigation.md → Addendum]
-- [ ] **Acknowledge critic loop is non-functional** — `CRITIC_AUTO_APPROVE_THRESHOLD: Inf`
-  means every note goes to human review regardless of verdict; citation scoring
-  is broken at the model level. Either fix or disable before Phase 4.2 resumes;
-  don't carry it as paid latency overhead. [oss_wiki_tools_investigation.md → Consensus]
+- [x] **Acknowledge critic loop is non-functional** — `CRITIC_AUTO_APPROVE_THRESHOLD: Inf`
+  is intentional: all notes go to human review. Documented in CLAUDE.md. Critic loop
+  still runs for verdict/confidence signals; auto-approve is deliberately disabled. (2026-05-24)
 - [ ] **Phase 4.2 decision** (gated on 3/3): should agentic subsume the
   entity-note critic loop? More attractive if P0 #2 is hard to fix.
   [phase_agentic_extraction_integration.md → Phase 4]
@@ -132,6 +131,8 @@ move to bottom of its section, don't delete.
 ---
 
 ## Completed (recent)
+
+- [x] **Codebase audit cleanup pass** — removed stale comments (config.R:97, shiny/iteration_metadata.R:2, CLAUDE.md git_commit caveat); archived 6 completed phase docs; archived `shiny/app.R` → `docs/archive/legacy_shiny_app.R`; archived `docs/phase3.md` + `docs/review_queue_ui.md`; updated README.md + ideas.md + CLAUDE.md accordingly. Deferred items 1–6 (slug consolidation, YAML scatter, queue schema, pipeline_path rename, agentic prefix, ACTIVE_EPISODES) assessed as P3 cleanup-branch work. (2026-05-24)
 
 - [x] **Phase F remaining issues** — word-overlap fallback grounding (≥50% content
   words present in source), attorrnash aliases added to entity_aliases.csv,
