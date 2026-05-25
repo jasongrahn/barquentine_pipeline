@@ -145,9 +145,11 @@ extract_entity <- function(entity_record,
   existing_note <- .read_vault_note(entity_id, note_type)
   existing_note_block <- if (nchar(existing_note) > 0L) {
     paste0(
-      "Here is the current wiki page for ", entity_name, ". Use this as an identity anchor",
-      " \u2014 the gender, role, and relationships listed here are established facts. Extract",
-      " only new information from the passages below that adds to or contradicts this page.\n\n",
+      "Here is the current wiki page for ", entity_name, ". The facts listed here are",
+      " established \u2014 use them as context when reading the passages below. Extract",
+      " information from the SOURCE PASSAGES: include facts the passages support or confirm,",
+      " add new details the passages reveal, and note anything that contradicts the existing page.",
+      " Do not fabricate details absent from both the existing page and the passages.\n\n",
       "EXISTING NOTE:\n", existing_note, "\n\n---\n"
     )
   } else ""

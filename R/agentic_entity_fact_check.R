@@ -27,13 +27,15 @@ suppressPackageStartupMessages({
   # Strip YAML frontmatter between --- fences
   text <- str_replace(text, "(?s)^---\\s*\n.*?\n---\\s*\n", "")
 
-  # Strip ## headers
-  lines <- str_split(text, "\n")[[1]]
-  lines <- lines[!str_detect(lines, "^#{1,6}\\s+")]
-  text  <- paste(lines, collapse = " ")
+  # Strip ## headers, then split on newlines before collapsing so that
+  # bullet/comma-list lines without terminal punctuation become separate claims.
+  lines  <- str_split(text, "\n")[[1]]
+  lines  <- lines[!str_detect(lines, "^#{1,6}\\s+")]
+  lines  <- str_trim(lines)
+  lines  <- lines[nzchar(lines)]
 
-  # Split on sentence boundaries or newlines
-  claims <- str_split(text, "[.!?]\\s+|\n")[[1]]
+  # Within each line, further split on sentence boundaries (.!?)
+  claims <- unlist(lapply(lines, function(ln) str_split(ln, "[.!?]\\s+")[[1]]))
   claims <- str_trim(claims)
   claims <- claims[nchar(claims) >= 10L]
   claims
