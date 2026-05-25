@@ -360,9 +360,10 @@ list(
                     coverage_score = NA_real_, aps_proposition_count = 0L,
                     pipeline_path = "aps_error"))
       fact_check_entity(
-        entity_id      = ep$entity_id,
-        draft_markdown = entity_agentic_markdown,
-        source_passages = ep$source_passages
+        entity_id       = ep$entity_id,
+        draft_markdown  = entity_agentic_markdown,
+        source_passages = ep$source_passages,
+        existing_note   = .read_vault_note(ep$entity_id, ep$note_type)
       )
     },
     pattern = map(entity_agentic_targets, entity_agentic_extracted, entity_agentic_markdown)

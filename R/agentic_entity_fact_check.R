@@ -71,9 +71,12 @@ suppressPackageStartupMessages({
 fact_check_entity <- function(entity_id,
                                draft_markdown,
                                source_passages,
+                               existing_note = "",
                                model    = NULL,   # unused; retained for API compatibility
                                base_url = NULL) { # unused; retained for API compatibility
-  source_text    <- paste(source_passages, collapse = " ")
+  source_text <- paste(source_passages, collapse = " ")
+  if (nchar(trimws(existing_note)) > 0L)
+    source_text <- paste(source_text, existing_note, sep = "\n\n")
   sentence_count <- .count_source_sentences(source_text)
 
   claims <- .split_draft_claims(draft_markdown)

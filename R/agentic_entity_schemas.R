@@ -98,7 +98,7 @@ entity_schema_version <- function() AGENTIC_ENTITY_SCHEMA_VERSION  # v2
         )
       )
     ),
-    required = character(0)
+    required = c("description")
   )
 }
 
