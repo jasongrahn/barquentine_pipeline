@@ -1,6 +1,6 @@
 # Stack Rank — Active Backlog
 
-Last updated: 2026-05-24 (Wet run #3 complete — s02e37, schema v2. lumi=1.0 (full pass), room=0.5 (partial), basil/attorrnash/giff_flotilla=0. Schema fixes confirmed: `line:{}` bug resolved for basil (real draft content), all-passages check resolved lumi. Remaining zeros: attorrnash=data sparsity (not in s02e37); basil/giff_flotilla=vague claim generation. Next candidate fix: vault anchor injection for location entities (same as F2 for PCs).)
+Last updated: 2026-05-27 (Wet run #7 complete — s02e37. lumi=1.0, basil=1.0, the_giff_flotilla=1.0, room=0.5, attorrnash=0.25. All entity-agentic P1 blockers cleared. Remaining non-blockers: giff_flotilla draft quality thin (coverage=1.0 but content is passage-summaries, not vault-note facts); room score fluctuates 0–0.5 (LLM stochasticity).)
 
 Single-page checklist. Detail entries live in `docs/ideas.md`,
 `docs/phase_next_backlog.md`, and `docs/phase_agentic_extraction_integration.md` —
@@ -11,11 +11,10 @@ move to bottom of its section, don't delete.
 
 ## P0 — Must-do / blockers
 
-- [x] **Entity-chain generator regression** — Phase F complete. 5/6 gate cleared
-  (2026-05-23): basil/lumi/room PASS, attorrnash/ted correctly empty, giff_flotilla
-  FAIL (template — no vault note anchor exists). F2 vault note prepend resolved basil
-  identity confusion; F2a focus anchor + F4 substring grounding in place.
-  Remaining: giff_flotilla needs a seed vault note before it can pass (new entity, no anchor).
+- [x] **Entity-chain generator regression** — Phase F complete. All P1 blockers cleared
+  (wet run #7, 2026-05-27): lumi=1.0, basil=1.0, giff_flotilla=1.0, room=0.5, attorrnash=0.25.
+  Three fixes in commit `7a63b98`: location schema `required=c("description")`, vault note
+  appended to `source_text` in `fact_check_entity()`, location extraction prompt reframed.
   [phase_gemma4_optimization.md → Phase F]
   [ideas.md → "Feed existing vault note" + "Entity-chain generator produces ungrounded templates"]
 - [x] **Best-draft selection picks the worst draft** — fixed commit `300078c`.
@@ -81,6 +80,10 @@ move to bottom of its section, don't delete.
 
 ## P2 — Quality / phased work
 
+- [ ] **giff_flotilla (location) draft quality** — coverage=1.0 but content is thin
+  passage-based summaries, not vault-note facts. Fix: in `R/agentic_entity_writer.R::assemble_location_markdown()`,
+  detect null/sparse extraction fields and fall back to parsed vault note content for those fields.
+  [ideas.md → "Feed existing vault note"]
 - [x] **`pipeline_path` column on `queue.csv`** — done; values: `critic_loop`,
   `aps_grounding`, `aps_error`. Legacy rows backfilled `critic_loop`.
   (Phase C, commit `3a2c83e`, 2026-05-14)

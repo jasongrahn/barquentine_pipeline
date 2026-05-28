@@ -118,6 +118,15 @@ When an entity appears in DM prep notes under one name ("Attorrnash") but the VT
 ### System prompt fields and JSON schema must stay in sync
 When a field is removed from the R schema (`agentic_entity_schemas.R`), it must also be removed from the skill's `system.md`. If the prompt still instructs the model to output a dropped field, constrained decoding (`format=entity_schema(...)`) suppresses it silently — but the model wastes generation tokens trying and may produce confused output in adjacent fields. After any schema v2-style field drop, audit all four skill system prompts against the updated schema properties list.
 
+### Ollama `required = character(0)` lets model emit `{}` → NULL abort
+JSON Schema with `required = character(0)` (no required fields) allows the model to satisfy the schema with an empty object `{}`. `length(parsed) == 0L` check in `.parse_entity_json()` returns NULL, aborting the branch silently. Fix: always include at least one required field (e.g. `required = c("description")`). All four entity schemas (npc, pc, faction, location) now follow this.
+
+### Grounding check must include existing vault note
+`fact_check_entity()` checks claims against raw VTT `source_passages`. For entities with an existing vault note from a prior pipeline run, extraction combines vault note content with new passages — so vault-derived claims have zero passage support, scoring 0.0. Fix: add `existing_note` param; append vault note to `source_text` before grounding. `.read_vault_note(entity_id, note_type)` in `R/agentic_entity_extract.R` retrieves it. Now basil 0.667→1.0, giff_flotilla 0→1.0 (commit `7a63b98`).
+
+### Extraction prompt framing: "update existing note" vs "extract from passages"
+When source passages are thin for a location entity, "Extract from SOURCE PASSAGES above" causes the model to explain why evidence is absent rather than return null. Fix: reframe to "Start from EXISTING NOTE; update with SOURCE PASSAGES." Add explicit "Do not explain why a field is empty — return null or []." Model then returns structured output instead of meta-commentary.
+
 ### Exact substring grounding scores 0.0 for LLM-paraphrased claims
 `str_detect(source_text, fixed(claim))` requires the exact claim string to appear verbatim in the source. LLM-generated wiki prose is paraphrase, not quotation, so coverage_score is 0.0 for every claim — even well-grounded ones. Two-level fix: try exact match first; fall back to word-overlap (fraction of content words ≥4 chars from the claim that appear anywhere in the source, threshold ≥0.5). Word-overlap is permissive enough for legitimate paraphrase and strict enough to reject wholesale fabrication.
 
