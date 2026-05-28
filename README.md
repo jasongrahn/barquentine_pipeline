@@ -76,11 +76,9 @@ See `CLAUDE.md` for full commands and architecture details.
 
 | Doc | What's in it |
 |---|---|
+| [`docs/context_index.md`](docs/context_index.md) | **Start here** — numbered index of all context docs |
 | [`docs/architecture.md`](docs/architecture.md) | Full design spec — sources, vault structure, note templates, all phases |
-| [`docs/architecture_llm_evaluation.md`](docs/architecture_llm_evaluation.md) | Model evaluation notes — why each model is assigned its role |
-| [`docs/archive/phase3.md`](docs/archive/phase3.md) | VTT entity pipeline — design decisions, performance analysis, and fix execution brief (archived) |
-| [`docs/archive/review_queue_ui.md`](docs/archive/review_queue_ui.md) | Shiny review UI — v1 design, v1.1 additions, and patch notes (archived) |
-| [`docs/phase_next_backlog.md`](docs/phase_next_backlog.md) | Confirmed feature requests for future phases |
+| [`docs/stack_rank.md`](docs/stack_rank.md) | Active priority checklist (P0–P4) |
 | [`LESSONS.md`](LESSONS.md) | Non-obvious gotchas in R, targets, Shiny, and Ollama |
 
 ---
