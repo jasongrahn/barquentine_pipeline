@@ -26,33 +26,18 @@ dispatch_agentic_entity <- function(markdown,
     stop("dispatch_agentic_entity: empty markdown for entity_id=", entity_id)
   }
 
-  confidence    <- fact_check_summary$confidence    %||% NA_real_
-  n_unsupported <- fact_check_summary$n_unsupported %||% 0L
-
-  # Surface unsupported citations as reviewer-visible issues.
-  issues  <- list()
-  results <- fact_check_summary$results
-  if (!is.null(results) && is.data.frame(results) && nrow(results) > 0L) {
-    unsup <- results[!results$supported, , drop = FALSE]
-    if (nrow(unsup) > 0L) {
-      issues <- lapply(seq_len(nrow(unsup)), function(i) {
-        kind  <- unsup$kind[[i]]
-        line  <- unsup$line[[i]]
-        claim <- if ("claim" %in% names(unsup)) unsup$claim[[i]] else NA_character_
-        line_label  <- if (is.na(line)) "no line cited" else paste0("line ", line)
-        claim_label <- if (!is.na(claim) && nzchar(claim))
-          paste0(": \"", substr(claim, 1L, 160L),
-                 if (nchar(claim) > 160L) "...\"" else "\"")
-        else ""
-        sprintf("[%s, %s] not grounded in source%s", kind, line_label, claim_label)
-      })
-    }
-  }
+  coverage_score        <- fact_check_summary$coverage_score        %||% NA_real_
+  matched_claims_vec    <- fact_check_summary$matched_claims         %||% character(0)
+  unmatched_claims_vec  <- fact_check_summary$unmatched_claims       %||% character(0)
+  pipeline_path_val     <- fact_check_summary$pipeline_path          %||% NA_character_
+  aps_proposition_count <- fact_check_summary$aps_proposition_count  %||% 0L
+  matched_claim_count   <- length(matched_claims_vec)
+  unmatched_claim_count <- length(unmatched_claims_vec)
 
   verdict_list <- list(
     verdict       = "agentic_no_critic",
-    confidence    = confidence,
-    issues        = issues,
+    confidence    = coverage_score,
+    issues        = list(),
     source_quotes = list(),
     escalated     = FALSE
   )
@@ -63,8 +48,8 @@ dispatch_agentic_entity <- function(markdown,
       iteration           = 1L,
       model               = "agentic_entity_v1",
       verdict             = "agentic_no_critic",
-      confidence          = confidence,
-      issues_count        = as.integer(n_unsupported),
+      coverage_score      = coverage_score,
+      pipeline_path       = pipeline_path_val,
       escalated_to_claude = FALSE,
       escalation_reason   = NA,
       timestamp           = Sys.time()
@@ -78,18 +63,26 @@ dispatch_agentic_entity <- function(markdown,
   if (action == "skip") return(invisible(NULL))
 
   enqueue_review(
-    draft              = markdown,
-    verdict_list       = verdict_list,
-    section_id         = entity_id,
-    source_text        = paste(entity_record$source_passages, collapse = "\n\n---\n\n"),
-    note_type          = note_type,
-    entity_name        = entity_name,
-    chunk_count        = length(entity_record$source_passages),
-    source_episode_ids = ep_ids_json,
-    iteration_count    = 1L,
-    claude_used        = FALSE,
-    iteration_log      = iter_log_json,
-    .queue_path        = .queue_path
+    draft                 = markdown,
+    verdict_list          = verdict_list,
+    section_id            = entity_id,
+    source_text           = paste(entity_record$source_passages, collapse = "\n\n---\n\n"),
+    note_type             = note_type,
+    entity_name           = entity_name,
+    chunk_count           = length(entity_record$source_passages),
+    source_episode_ids    = ep_ids_json,
+    iteration_count       = 1L,
+    claude_used           = FALSE,
+    iteration_log         = iter_log_json,
+    coverage_score        = coverage_score,
+    matched_claim_count   = as.integer(matched_claim_count),
+    unmatched_claim_count = as.integer(unmatched_claim_count),
+    pipeline_path         = pipeline_path_val,
+    matched_claims        = tryCatch(toJSON(matched_claims_vec, auto_unbox = FALSE),
+                                     error = function(e) NA_character_),
+    unmatched_claims      = tryCatch(toJSON(unmatched_claims_vec, auto_unbox = FALSE),
+                                     error = function(e) NA_character_),
+    .queue_path           = .queue_path
   )
   invisible("enqueued")
 }

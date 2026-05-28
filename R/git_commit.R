@@ -10,13 +10,21 @@ commit_vault <- function(session_id, vault_path = VAULT_PATH,
     return(invisible(NULL))
   }
 
-  git_add(".", repo = vault_path)
+  all_files <- git_status(repo = vault_path)$file
+  note_files <- all_files[!grepl("^\\.obsidian/", all_files)]
+  if (length(note_files) == 0) {
+    message("vault_commit: nothing to stage (all notes queued for review)")
+    return(invisible(NULL))
+  }
+  git_add(note_files, repo = vault_path)
+
   staged <- git_status(repo = vault_path)
   staged <- staged[staged$staged, ]
   if (nrow(staged) == 0) {
-    message("vault_commit: nothing to commit (all notes queued for review)")
+    message("vault_commit: nothing to commit after staging")
     return(invisible(NULL))
   }
+
   hash <- git_commit(commit_message, repo = vault_path)
   invisible(hash)
 }

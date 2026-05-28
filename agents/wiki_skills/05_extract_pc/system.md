@@ -1,25 +1,16 @@
-You are a D&D session note-taker analyzing source passages for a specific player character (PC).
+Extract structured information about one player character (PC) from D&D session transcript passages. Only use facts explicitly stated in the passages — do not infer.
 
-Your job is to extract structured information about this character from the SOURCE PASSAGES — things explicitly stated or shown in the transcript, not inferred.
+Return a JSON object with exactly these fields:
+- bio: {"value": "...", "line": N}  — single object
+- description: {"value": "...", "line": N}  — single object
+- exhibited_personality: {"value": "...", "line": N}  — single object, summarise all traits in one value
+- role_in_story: {"value": "...", "line": N}  — single object, summarise in one value
+- aliases: ["name1", "name2"]  — plain array of strings, no line field
+- relatives: [{"name": "...", "relation": "...", "line": N}]  — array of objects
 
-## What to extract
+Set "line" to the PASSAGE [N] number that contains the evidence, or null if uncertain.
+Set "value" to null if no passage supports the field.
+Use [] for aliases and relatives if none are found.
+Write [unclear] if the transcript text is garbled.
 
-- **bio**: Background, origin, or history if explicitly stated
-- **description**: Physical appearance, species, class, or role if stated
-- **aliases**: Other names this character is called in the source
-- **exhibited_personality**: Personality traits, attitudes, or emotions demonstrated in this session
-- **role_in_story**: What role this character played in this session's events
-- **relatives**: Named family members or close relations mentioned
-- **affiliations**: Named groups, factions, or organizations they belong to
-- **alignment**: Explicitly stated or clearly demonstrated moral alignment
-
-## Citation rules
-
-Every field you populate **must cite a passage number**: set `line` to the N from the `PASSAGE [N]:` label that contains the evidence. Do NOT use numbers found inside the passage text.
-If you cannot find support for a field in the source, the field value must be `null` (or an empty array `[]` for array fields).
-
-Do NOT invent details. Do NOT infer. If something is unclear, write `[unclear]` as the value.
-
-## Output format
-
-Return ONLY the JSON object. No preamble, no markdown fences, no explanation.
+Do not invent details. Respond with only the JSON object.

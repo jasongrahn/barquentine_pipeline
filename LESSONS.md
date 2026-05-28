@@ -29,6 +29,9 @@ ep$note_type  # correct
 ### Default arguments resolve at call time in the enclosing environment
 `read_queue(.queue_path = REVIEW_QUEUE_PATH)` looks up `REVIEW_QUEUE_PATH` in the function's enclosing environment (where `queue.R` was sourced), not at the call site. This is usually fine but bites you in Shiny.
 
+### targets does not track `readLines()` file loads as dependencies
+Skill prompt templates loaded with `readLines()` inside an R function are invisible to targets' dependency tracking. Editing `agents/wiki_skills/*/user_template.md` will not mark any target as outdated — targets sees only the function body, not files read at runtime. Fix: after editing any user_template.md, run `targets::tar_invalidate(starts_with("entity_agentic"))` before `tar_make()` to force re-extraction.
+
 ### targets skips downstream when an upstream returns same-shape value
 A single-target node whose body is `lapply(seq_along(x), ...)` returning a constant per element (e.g., `dispatch_*()` returning `invisible("enqueued")`) produces the same content hash whenever the input length is stable. Downstream targets that depend only on this node will be SKIPPED on subsequent runs even though the upstream "ran" — targets compares values, not invocations. Symptom on `agentic_dispatched` → `agentic_queue_consolidated`: staging files were written but never rolled into `queue.csv` because the consolidator was skipped. Fix: either return a content-varying value (Sys.time, count, written paths) or attach `cue = tar_cue(mode = "always")` to the downstream side-effect target.
 
@@ -99,8 +102,33 @@ When porting a filter across chains, ask: "is this a *presentation* rule (recap 
 ### Edit-distance slug collapse is location-only
 `R/postprocess_shared.R::collapse_near_match_slugs()` uses `utils::adist()` + union-find to merge near-typo slugs. The entity chain (and the agentic chain's `collapse_near_match_locations`) apply it **only to `note_type == "location"` records**. NPCs and factions have personal names where small edit distances are too noisy ("Cletus" vs "Cletas" must not auto-merge without reviewer judgment). Locations are typo-tolerant in practice.
 
+### APS model (`gurubot/gemma-2b-aps-it:Q4_K_M`) output format
+Output starts with `: PROPOSITIONS:\n<s>\n`, then hyphen-bullet lines, ends with `</s>`. At 3000–7500 words input, model produces ~8 propositions and stops. Not a timeout — just low output volume. Strip the header and sentinel before splitting on newlines.
+
+Proposition content reflects surface utterances verbatim, not structured facts. Identity confusion present: if two characters share a passage the model may emit propositions attributed to the wrong one. APS is useful as a grounding filter, not a fact oracle.
+
+`regex(claim, ignore_case=TRUE)` in `str_detect()` uses claim text as a regex pattern. Claims from draft sentences may contain `()`, `.`, `?` — these are valid regex but match broadly. Acceptable for grounding; do not use for exact equality checks.
+
 ### Transcription artifacts in source text
 Source text comes from automated transcripts and will contain garbled, split, or misheard words. The generator prompt must instruct the model to write `[unclear]` rather than guess — otherwise it invents plausible-sounding but fabricated content, violating the no-fabrication rule. Reviewers in the Shiny UI should treat `[unclear]` markers as expected, not as model failures.
+
+### Entity filtered by MIN_ENTITY_CHUNK_COUNT? Check spelling variants in VTT first
+When an entity appears in DM prep notes under one name ("Attorrnash") but the VTT transcript uses a different spelling ("Adernash") or title ("Cartamancer"), entity spotting collects zero passages under the DM-prep slug. The entity silently passes zero chunks and gets filtered. Diagnosis: grep the VTT source for partial name matches before assuming the character is truly absent. Fix: add the VTT variant(s) as aliases in `config/entity_aliases.csv` pointing to the canonical slug.
+
+### System prompt fields and JSON schema must stay in sync
+When a field is removed from the R schema (`agentic_entity_schemas.R`), it must also be removed from the skill's `system.md`. If the prompt still instructs the model to output a dropped field, constrained decoding (`format=entity_schema(...)`) suppresses it silently — but the model wastes generation tokens trying and may produce confused output in adjacent fields. After any schema v2-style field drop, audit all four skill system prompts against the updated schema properties list.
+
+### Ollama `required = character(0)` lets model emit `{}` → NULL abort
+JSON Schema with `required = character(0)` (no required fields) allows the model to satisfy the schema with an empty object `{}`. `length(parsed) == 0L` check in `.parse_entity_json()` returns NULL, aborting the branch silently. Fix: always include at least one required field (e.g. `required = c("description")`). All four entity schemas (npc, pc, faction, location) now follow this.
+
+### Grounding check must include existing vault note
+`fact_check_entity()` checks claims against raw VTT `source_passages`. For entities with an existing vault note from a prior pipeline run, extraction combines vault note content with new passages — so vault-derived claims have zero passage support, scoring 0.0. Fix: add `existing_note` param; append vault note to `source_text` before grounding. `.read_vault_note(entity_id, note_type)` in `R/agentic_entity_extract.R` retrieves it. Now basil 0.667→1.0, giff_flotilla 0→1.0 (commit `7a63b98`).
+
+### Extraction prompt framing: "update existing note" vs "extract from passages"
+When source passages are thin for a location entity, "Extract from SOURCE PASSAGES above" causes the model to explain why evidence is absent rather than return null. Fix: reframe to "Start from EXISTING NOTE; update with SOURCE PASSAGES." Add explicit "Do not explain why a field is empty — return null or []." Model then returns structured output instead of meta-commentary.
+
+### Exact substring grounding scores 0.0 for LLM-paraphrased claims
+`str_detect(source_text, fixed(claim))` requires the exact claim string to appear verbatim in the source. LLM-generated wiki prose is paraphrase, not quotation, so coverage_score is 0.0 for every claim — even well-grounded ones. Two-level fix: try exact match first; fall back to word-overlap (fraction of content words ≥4 chars from the claim that appear anywhere in the source, threshold ≥0.5). Word-overlap is permissive enough for legitimate paraphrase and strict enough to reject wholesale fabrication.
 
 ---
 
@@ -129,3 +157,11 @@ testthat 3.x evaluates test files in a local environment. Functions defined via 
 assign("enqueue_review", function(...) invisible(NULL), envir = globalenv())
 ```
 A plain `enqueue_review <- function(...) invisible(NULL)` inside a `test_that()` block will not be found.
+
+---
+
+### `gert::git_add(".", repo = vault_path)` does NOT recursively stage untracked files
+Unlike `git add .` in the shell, `gert::git_add(".", ...)` treats `"."` as a literal filename — it does not recursively stage new untracked files. Root cause of the silent vault-commit bug where commits only contained `.obsidian/workspace.json` changes.
+
+Fix: enumerate changed/untracked files via `git_status(repo)$file`, filter the paths you want to exclude (e.g. `^\.obsidian/`), then pass the resulting character vector to `git_add(files, repo)`. Add a post-stage assertion that at least one note-directory path is present before calling `git_commit`.
+

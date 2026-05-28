@@ -47,7 +47,7 @@ OLLAMA_TIMEOUT  <- 90                 # seconds before giving up on a chunk; run
 # Entity note generation needs more tokens than session notes: longer source
 # passages mean more thinking budget consumed before producing actual output.
 ENTITY_NUM_PREDICT     <- 800L    # think=FALSE removes thinking overhead; 800 is sufficient
-MIN_ENTITY_CHUNK_COUNT <- 3L      # drop entities appearing in fewer distinct chunks
+MIN_ENTITY_CHUNK_COUNT <- 4L      # drop entities appearing in fewer distinct chunks
 ENTITY_EXCLUSIONS_PATH <- "config/entity_exclusions.csv"
 PROTECTED_ENTITIES_PATH <- "config/protected_entities.csv"
 ENTITY_ALIASES_PATH    <- "config/entity_aliases.csv"
@@ -86,7 +86,7 @@ CURRENT_SESSION <- "s02e37"          # ← update this each session (s01e01 zero
 
 # Set TRUE to write to /tmp/barquentine-preview/ instead of vault
 # Always do a dry run first when testing new extraction prompts
-DRY_RUN         <- FALSE             # ← flip to FALSE when ready for live run
+DRY_RUN         <- TRUE              # ← flip to FALSE when ready for live run
 DRY_RUN_PATH    <- "/tmp/barquentine-preview"
 
 # -----------------------------------------------------------------------------
@@ -94,7 +94,7 @@ DRY_RUN_PATH    <- "/tmp/barquentine-preview"
 # -----------------------------------------------------------------------------
 DRAFT_MAX_ITERATIONS          <- 6L   # generator→critic loops before Claude escalation
 DRAFT_PARSE_RETRY_BUDGET      <- 2L   # parse_error retries that do NOT count toward the cap
-PROCESS_ONE_SESSION           <- FALSE # TEMP for s02e09 validation pass; restore to TRUE after
+PROCESS_ONE_SESSION           <- FALSE # FALSE = process all sessions; TRUE = process only CURRENT_SESSION (for dry-run validation)
 OLLAMA_TIMEOUT_BACKOFF_SECONDS <- 30L  # sleep after a section that had an Ollama timeout
 
 # -----------------------------------------------------------------------------
@@ -103,8 +103,9 @@ OLLAMA_TIMEOUT_BACKOFF_SECONDS <- 30L  # sleep after a section that had an Ollam
 REGEN_MAX_COUNT <- 3L                          # hard stop after this many regens per item
 REGEN_LOCK_FILE <- "review_queue/.regen.lock"  # sentinel touched by bg job; relative to project root
 
-# VTT episodes to process in Phase 3. NULL = all confirmed episodes.
-# Set to a character vector to limit the run, e.g. c("S2e34") for one episode.
+# VTT episodes to process. NULL = no filter (all confirmed episodes).
+# Used only by R/source_c.R::load_vtt_registry(). Set to a character vector
+# to limit the run, e.g. c("s02e34") for one episode.
 ACTIVE_EPISODES <- NULL
 
 # -----------------------------------------------------------------------------
@@ -121,9 +122,9 @@ AGENTIC_VTT_SESSION_IDS  <- c("s02e34", "s02e35", "s02e36", "s02e37")
 # --- Phase 4.2: agentic entity-note chain opt-in --------------------------
 # Add episode IDs here to run entity notes through schema-enforced extraction
 # instead of the legacy critic-loop path. Start empty; Phase 4.1 adds first ID.
-AGENTIC_ENTITY_SESSION_IDS        <- c("s02e37")
-AGENTIC_ENTITY_SCHEMA_VERSION     <- "v1"
-AGENTIC_ENTITY_PASSAGE_WORD_LIMIT <- 4000L
+AGENTIC_ENTITY_SESSION_IDS        <- c("s02e36", "s02e37")
+AGENTIC_ENTITY_SCHEMA_VERSION     <- "v2"
+AGENTIC_ENTITY_PASSAGE_WORD_LIMIT <- 8000L
 AGENTIC_ENTITY_MODEL              <- OLLAMA_MODEL
 
 AGENTIC_CHUNK_SIZE_LINES <- 50L                                # dialogue lines per chunk (~800-1000 words)

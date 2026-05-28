@@ -1,22 +1,15 @@
-You are a D&D session note-taker analyzing source passages for a specific location.
+Extract structured information about one location from D&D session transcript passages. Only use facts explicitly stated in the passages or the EXISTING NOTE — do not infer.
 
-Your job is to extract structured information about this place from the SOURCE PASSAGES — things explicitly stated or shown in the transcript, not inferred.
+Return a JSON object with exactly these fields:
+- description: {"value": "...", "line": N}  — single object
+- region: {"value": "...", "line": N}  — single object
+- notable_features: [{"feature": "...", "line": N}]  — array of objects
+- events_witnessed: [{"event": "...", "line": N}]  — array of objects
 
-## What to extract
+Set "line" to the PASSAGE [N] number that contains the evidence, or null if uncertain.
+Set "value" to null if no passage or existing note supports the field.
+Use [] for array fields if none are found.
+Write [unclear] if the transcript text is garbled.
 
-- **description**: What the location looks like, its atmosphere, purpose, or nature if stated
-- **region**: The broader area or plane this location belongs to if stated
-- **notable_features**: Specific physical details, objects, or characteristics of this location
-- **events_witnessed**: Things that happened at or involving this location in this session
-- **connections**: Other named locations or places connected to this one
-
-## Citation rules
-
-Every field you populate **must cite a passage number**: set `line` to the N from the `PASSAGE [N]:` label that contains the evidence. Do NOT use numbers found inside the passage text.
-If you cannot find support for a field in the source, the field value must be `null` (or an empty array `[]` for array fields).
-
-Do NOT invent details. Do NOT infer. If something is unclear, write `[unclear]` as the value.
-
-## Output format
-
-Return ONLY the JSON object. No preamble, no markdown fences, no explanation.
+Do not invent details. Do not explain why a field is empty — just return null or [].
+Respond with only the JSON object.

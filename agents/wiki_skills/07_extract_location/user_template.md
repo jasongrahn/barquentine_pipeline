@@ -1,19 +1,21 @@
-## ENTITY
-Name: {entity_name}
+Entity: {entity_name}
 Known aliases: {aliases}
 Type: {note_type}
 
-## RECAP CONTEXT
-{recap_context}
+Context: {recap_context}
 
-## SOURCE PASSAGES
-(each block is labeled PASSAGE [N] — the `line` field must be that N)
+{existing_note_block}
+Target entity: {entity_name} (type: {note_type}). Focus exclusively on this entity. All other characters mentioned in the passages are context, not the subject.
+
+SOURCE PASSAGES
+(each block labeled PASSAGE [N] — use N as the line number)
 {source_passages}
 
 ---
 
-Extract information about this location from the SOURCE PASSAGES above.
-Every populated field must set `line` to the PASSAGE [N] number that contains the supporting evidence.
-Do NOT use numbers found inside the passage text.
-Fields with no source support must be null or [].
-Return ONLY the JSON object.
+If an EXISTING NOTE was provided above, copy its field values into your JSON output as the starting point. Then update using the SOURCE PASSAGES: add new details the passages reveal, and note contradictions.
+If no EXISTING NOTE was provided, extract only from SOURCE PASSAGES.
+Fields with no support from either source must be null or [].
+Do not explain why a field is empty — just return null or [].
+
+Target entity: {entity_name} (type: {note_type}). Focus exclusively on this entity. All other characters mentioned in the passages are context, not the subject.

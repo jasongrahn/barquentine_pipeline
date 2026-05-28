@@ -1,3 +1,53 @@
+render_grounding_panel <- function(row) {
+  pipeline_path <- .nc(row$pipeline_path, "")
+  if (!nzchar(pipeline_path) || pipeline_path == "critic_loop") return(NULL)
+  if (!startsWith(pipeline_path, "aps_")) return(NULL)
+
+  coverage_score <- if (is.na(row$coverage_score)) NA_real_ else as.numeric(row$coverage_score)
+
+  matched   <- tryCatch(fromJSON(.nc(row$matched_claims,   "[]"), simplifyVector = TRUE),
+                        error = function(e) character(0))
+  unmatched <- tryCatch(fromJSON(.nc(row$unmatched_claims, "[]"), simplifyVector = TRUE),
+                        error = function(e) character(0))
+  if (!is.character(matched))   matched   <- character(0)
+  if (!is.character(unmatched)) unmatched <- character(0)
+
+  score_label <- if (!is.na(coverage_score))
+    tags$span(
+      style = paste0("font-weight:bold;color:",
+                     if (coverage_score >= 0.7) "#28a745"
+                     else if (coverage_score >= 0.4) "#fd7e14"
+                     else "#dc3545", ";"),
+      sprintf("%.0f%% grounded", coverage_score * 100)
+    )
+  else NULL
+
+  make_badges <- function(claims, bg) {
+    if (length(claims) == 0) return(NULL)
+    lapply(claims, function(cl) {
+      tags$span(
+        style = paste0("display:inline-block;background:", bg, ";color:#fff;",
+                       "border-radius:3px;padding:2px 6px;margin:2px;font-size:0.78em;"),
+        cl
+      )
+    })
+  }
+
+  tagList(
+    tags$h6(style = "margin-top:16px;", "APS Grounding", score_label),
+    if (length(matched) > 0) tagList(
+      tags$div(style = "font-size:0.8em;color:#555;margin-bottom:4px;",
+               paste0("Matched (", length(matched), ")")),
+      tags$div(tagList(make_badges(matched, "#28a745")))
+    ),
+    if (length(unmatched) > 0) tagList(
+      tags$div(style = "font-size:0.8em;color:#555;margin:8px 0 4px;",
+               paste0("Unmatched (", length(unmatched), ")")),
+      tags$div(tagList(make_badges(unmatched, "#dc3545")))
+    )
+  )
+}
+
 render_critic_cards <- function(issues, source_quotes) {
   if (length(issues) == 0) return(NULL)
 

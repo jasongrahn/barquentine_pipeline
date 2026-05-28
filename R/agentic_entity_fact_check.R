@@ -1,120 +1,104 @@
-# Mechanical citation verification for agentic entity extraction (Phase 4.2).
+# Source-sentence substring grounding check for agentic entity extraction (Phase F4).
 #
-# No LLM. Each {value, line} field in the extraction cites a passage index
-# (1..N where N = length(entity_record$source_passages)). This checker
-# verifies the index is in range and the value substring is present at that
-# passage (case-insensitive, whitespace-collapsed).
+# Replaces APS-based grounding (Phase C). Each claim extracted from the draft is
+# checked for literal presence in the concatenated source passages via fixed-string
+# substring match.
 #
-# Return shape mirrors verify_line_citations() in agentic_fact_check.R:
-#   list(n_checked, n_unsupported, confidence, results)
-#   results tibble: kind (field name), line, supported, claim
+# Public API:
+#   fact_check_entity(entity_id, draft_markdown, source_passages, model, base_url)
+#
+# Return shape (unchanged from APS version for Shiny UI compatibility):
+#   list(matched_claims, unmatched_claims, coverage_score, aps_proposition_count,
+#        pipeline_path)
+#   aps_proposition_count holds source sentence count (column name preserved).
 
 suppressPackageStartupMessages({
-  library(stringr); library(tibble)
+  library(stringr)
 })
 
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
 
-# Recursively collect all {value/name/feature/event, line} leaves.
-# Returns a list of named lists: list(kind, value, line).
-.collect_entity_citeables <- function(obj) {
-  if (is.null(obj)) return(list())
+.split_draft_claims <- function(draft_markdown) {
+  if (is.null(draft_markdown) || !nzchar(trimws(draft_markdown))) return(character(0))
+  text <- draft_markdown
 
-  if (is.data.frame(obj)) {
-    if (!"line" %in% names(obj)) return(list())
-    value_col <- intersect(c("value", "name", "feature", "event"), names(obj))
-    if (length(value_col) == 0L) return(list())
-    vc <- value_col[[1L]]
-    return(lapply(seq_len(nrow(obj)), function(i) {
-      list(kind = vc, value = obj[[vc]][[i]], line = obj$line[[i]])
-    }))
-  }
+  # Strip YAML frontmatter between --- fences
+  text <- str_replace(text, "(?s)^---\\s*\n.*?\n---\\s*\n", "")
 
-  if (is.list(obj) && !is.null(names(obj))) {
-    if ("line" %in% names(obj)) {
-      vc <- intersect(c("value", "name", "feature", "event"), names(obj))
-      if (length(vc) > 0L)
-        return(list(list(kind = vc[[1L]], value = obj[[vc[[1L]]]], line = obj$line)))
-    }
-    result <- list()
-    for (child in obj) result <- c(result, .collect_entity_citeables(child))
-    return(result)
-  }
+  # Strip ## headers, then split on newlines before collapsing so that
+  # bullet/comma-list lines without terminal punctuation become separate claims.
+  lines  <- str_split(text, "\n")[[1]]
+  lines  <- lines[!str_detect(lines, "^#{1,6}\\s+")]
+  lines  <- str_trim(lines)
+  lines  <- lines[nzchar(lines)]
 
-  list()
+  # Within each line, further split on sentence boundaries (.!?)
+  claims <- unlist(lapply(lines, function(ln) str_split(ln, "[.!?]\\s+")[[1]]))
+  claims <- str_trim(claims)
+  claims <- claims[nchar(claims) >= 10L]
+  claims
+}
+
+# Two-level claim grounding check:
+#   Level 1 — exact substring match (fast; catches direct quotes)
+#   Level 2 — word-overlap fallback for paraphrased claims: a claim is grounded
+#              when >= OVERLAP_THRESHOLD fraction of its content words (>= 4 chars)
+#              appear anywhere in the source text.
+.WORD_OVERLAP_THRESHOLD <- 0.5
+
+.is_claim_grounded <- function(claim, source_text,
+                                threshold = .WORD_OVERLAP_THRESHOLD) {
+  if (str_detect(source_text, fixed(claim, ignore_case = TRUE))) return(TRUE)
+  claim_words <- str_extract_all(tolower(claim), "\\b[a-z]{4,}\\b")[[1]]
+  if (length(claim_words) == 0L) return(FALSE)
+  source_lower <- tolower(source_text)
+  n_matched <- sum(str_detect(source_lower, paste0("\\b", claim_words, "\\b")))
+  n_matched / length(claim_words) >= threshold
+}
+
+.count_source_sentences <- function(source_text) {
+  if (!nzchar(trimws(source_text))) return(0L)
+  sentences <- str_split(source_text, "[.!?]\\s+|\n")[[1]]
+  as.integer(sum(nzchar(str_trim(sentences))))
 }
 
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
-#' Verify that every line citation in an entity extraction refers to a real
-#' passage and that the cited value appears as a substring of that passage.
-#'
-#' @param extraction   Parsed list from extract_entity()$extraction (may be NULL).
-#' @param entity_record  Named list with source_passages (character vector).
-#'
-#' @return Named list: n_checked (int), n_unsupported (int), confidence (dbl or NA),
-#'   results (tibble with columns kind, line, supported, claim).
-verify_entity_citations <- function(extraction, entity_record) {
-  empty_result <- list(
-    n_checked     = 0L,
-    n_unsupported = 0L,
-    confidence    = NA_real_,
-    results       = tibble(kind = character(), line = integer(),
-                           supported = logical(), claim = character())
-  )
-  if (is.null(extraction)) return(empty_result)
+fact_check_entity <- function(entity_id,
+                               draft_markdown,
+                               source_passages,
+                               existing_note = "",
+                               model    = NULL,   # unused; retained for API compatibility
+                               base_url = NULL) { # unused; retained for API compatibility
+  source_text <- paste(source_passages, collapse = " ")
+  if (nchar(trimws(existing_note)) > 0L)
+    source_text <- paste(source_text, existing_note, sep = "\n\n")
+  sentence_count <- .count_source_sentences(source_text)
 
-  passages <- entity_record$source_passages
-  max_line <- length(passages)
+  claims <- .split_draft_claims(draft_markdown)
+  if (length(claims) == 0L) {
+    return(list(
+      matched_claims        = character(0),
+      unmatched_claims      = character(0),
+      coverage_score        = NA_real_,
+      aps_proposition_count = sentence_count,
+      pipeline_path         = "substring_grounding"
+    ))
+  }
 
-  items <- .collect_entity_citeables(extraction)
-  # Keep only items with a non-null line citation
-  items <- Filter(function(x) !is.null(x$line) && !is.na(x$line), items)
-
-  n_checked <- length(items)
-  if (n_checked == 0L) return(empty_result)
-
-  rows <- lapply(items, function(item) {
-    line  <- as.integer(item$line)
-    value <- item$value
-    claim <- if (!is.null(value) && !is.na(value)) substr(as.character(value), 1L, 200L) else ""
-
-    if (is.na(line) || line < 1L || line > max_line) {
-      return(list(kind = item$kind, line = line, supported = FALSE, claim = claim))
-    }
-
-    if (is.null(value) || is.na(value) || !nzchar(trimws(as.character(value)))) {
-      return(list(kind = item$kind, line = line, supported = TRUE, claim = claim))
-    }
-
-    needle    <- str_squish(tolower(as.character(value)))
-    hay       <- str_squish(tolower(passages[[line]]))
-    supported <- str_detect(hay, fixed(needle))
-
-    list(kind = item$kind, line = line, supported = supported, claim = claim)
-  })
-
-  results_df <- tibble(
-    kind      = vapply(rows, `[[`, character(1L), "kind"),
-    line      = vapply(rows, `[[`, integer(1L),   "line"),
-    supported = vapply(rows, `[[`, logical(1L),   "supported"),
-    claim     = vapply(rows, function(r) r$claim %||% "", character(1L))
-  )
-
-  n_supported   <- sum(results_df$supported, na.rm = TRUE)
-  n_unsupported <- as.integer(n_checked - n_supported)
-  confidence    <- n_supported / n_checked
+  is_matched <- vapply(claims, function(claim) {
+    .is_claim_grounded(claim, source_text)
+  }, logical(1))
 
   list(
-    n_checked     = as.integer(n_checked),
-    n_unsupported = n_unsupported,
-    confidence    = confidence,
-    results       = results_df
+    matched_claims        = unname(claims[is_matched]),
+    unmatched_claims      = unname(claims[!is_matched]),
+    coverage_score        = mean(is_matched),
+    aps_proposition_count = sentence_count,
+    pipeline_path         = "substring_grounding"
   )
 }
-
-`%||%` <- function(x, y) if (is.null(x)) y else x

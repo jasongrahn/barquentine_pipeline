@@ -1,19 +1,19 @@
-## ENTITY
-Name: {entity_name}
+Entity: {entity_name}
 Known aliases: {aliases}
 Type: {note_type}
 
-## RECAP CONTEXT
-{recap_context}
+Context: {recap_context}
 
-## SOURCE PASSAGES
-(each block is labeled PASSAGE [N] — the `line` field must be that N)
+{existing_note_block}
+Target entity: {entity_name} (type: {note_type}). Focus exclusively on this entity. All other characters mentioned in the passages are context, not the subject.
+
+SOURCE PASSAGES
+(each block labeled PASSAGE [N] — use N as the line number)
 {source_passages}
 
 ---
 
 Extract information about this character from the SOURCE PASSAGES above.
-Every populated field must set `line` to the PASSAGE [N] number that contains the supporting evidence.
-Do NOT use numbers found inside the passage text.
 Fields with no source support must be null or [].
-Return ONLY the JSON object.
+
+Target entity: {entity_name} (type: {note_type}). Focus exclusively on this entity. All other characters mentioned in the passages are context, not the subject.

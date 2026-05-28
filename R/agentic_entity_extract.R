@@ -9,14 +9,13 @@
 # this file is self-sufficient when sourced by tests or smoke-test scripts.
 
 suppressPackageStartupMessages({
-  library(glue); library(cli)
+  library(glue); library(cli); library(jsonlite)
 })
 
-if (!exists(".call_ollama_skill", mode = "function")) {
-  src_dir <- tryCatch(dirname(normalizePath(sys.frame(1L)$ofile)),
-                      error = function(e) "R")
-  source(file.path(src_dir, "agentic_extract.R"), local = FALSE)
-}
+.agentic_entity_src_dir <- tryCatch(
+  dirname(normalizePath(sys.frame(1L)$ofile)), error = function(e) "R")
+if (!exists(".call_ollama_skill", mode = "function"))
+  source(file.path(.agentic_entity_src_dir, "agentic_extract.R"), local = FALSE)
 if (!exists("entity_schema", mode = "function")) {
   src_dir <- tryCatch(dirname(normalizePath(sys.frame(1L)$ofile)),
                       error = function(e) "R")
@@ -27,6 +26,8 @@ if (!exists("entity_schema", mode = "function")) {
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+`%||%` <- function(x, y) if (is.null(x)) y else x
+
 .entity_skill_name <- function(note_type) {
   switch(note_type,
     pc       = "05_extract_pc",
@@ -35,6 +36,19 @@ if (!exists("entity_schema", mode = "function")) {
     faction  = "08_extract_faction",
     stop("Unknown note_type for entity extraction: ", note_type)
   )
+}
+
+.vault_subdir <- function(note_type) {
+  switch(note_type, pc = "npcs", npc = "npcs", location = "locations", faction = "factions", "npcs")
+}
+
+# Read existing vault note for identity anchoring (F2). Returns "" when absent or empty.
+.read_vault_note <- function(entity_id, note_type, vault_path = VAULT_PATH) {
+  path <- file.path(vault_path, .vault_subdir(note_type), paste0(entity_id, ".md"))
+  if (!file.exists(path)) return("")
+  content <- tryCatch(paste(readLines(path, warn = FALSE), collapse = "\n"),
+                      error = function(e) "")
+  if (nchar(trimws(content)) == 0L) "" else content
 }
 
 .count_words <- function(text) {
@@ -69,6 +83,32 @@ if (!exists("entity_schema", mode = "function")) {
   passages[seq_len(kept)]
 }
 
+# R-side parse for format=NULL responses: fence-strip → JSON parse → schema validate.
+# Returns NULL if parsing or validation fails (F0.5).
+.validate_entity_extraction <- function(parsed, note_type) {
+  if (is.null(parsed) || !is.list(parsed) || length(parsed) == 0L) return(FALSE)
+  expected <- names(entity_schema(note_type)$properties)
+  any(expected %in% names(parsed))
+}
+
+.parse_entity_json <- function(raw, note_type, entity_id) {
+  if (is.null(raw)) return(NULL)
+  if (is.list(raw) && isTRUE(raw$timed_out)) return(NULL)
+  stripped <- .strip_json_fences(as.character(raw))
+  parsed <- tryCatch(
+    fromJSON(stripped, simplifyVector = FALSE),
+    error = function(e) {
+      cli::cli_warn("[entity {entity_id}] JSON parse failed: {e$message}")
+      NULL
+    }
+  )
+  if (!.validate_entity_extraction(parsed, note_type)) {
+    cli::cli_warn("[entity {entity_id}] schema validation failed \u2014 returning NULL")
+    return(NULL)
+  }
+  parsed
+}
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -95,42 +135,55 @@ extract_entity <- function(entity_record,
   note_type   <- entity_record$note_type
   passages    <- entity_record$source_passages
 
-  passages          <- .truncate_passages(passages, AGENTIC_ENTITY_PASSAGE_WORD_LIMIT)
+  passages <- .truncate_passages(passages, AGENTIC_ENTITY_PASSAGE_WORD_LIMIT)
   numbered_passages <- .number_passages(passages)
 
   aliases <- if (!is.null(entity_record$entity_aliases) &&
                   length(entity_record$entity_aliases) > 0L)
     paste(entity_record$entity_aliases, collapse = ", ") else ""
 
+  existing_note <- .read_vault_note(entity_id, note_type)
+  existing_note_block <- if (nchar(existing_note) > 0L) {
+    paste0(
+      "Here is the current wiki page for ", entity_name, ". The facts listed here are",
+      " established \u2014 use them as context when reading the passages below. Extract",
+      " information from the SOURCE PASSAGES: include facts the passages support or confirm,",
+      " add new details the passages reveal, and note anything that contradicts the existing page.",
+      " Do not fabricate details absent from both the existing page and the passages.\n\n",
+      "EXISTING NOTE:\n", existing_note, "\n\n---\n"
+    )
+  } else ""
+
   skill  <- .entity_skill_name(note_type)
   system <- .load_skill(skill, "system", skills_dir)
   user   <- glue(
     .load_skill(skill, "user_template", skills_dir),
-    entity_name     = entity_name,
-    aliases         = aliases,
-    note_type       = note_type,
-    recap_context   = recap_context,
-    source_passages = numbered_passages,
+    entity_name          = entity_name,
+    aliases              = aliases,
+    note_type            = note_type,
+    recap_context        = recap_context,
+    source_passages      = numbered_passages,
+    existing_note_block  = existing_note_block,
     .open = "{", .close = "}"
   )
 
-  raw <- .call_ollama_skill(
-    model    = model,
-    base_url = base_url,
-    system   = system,
-    user     = user,
-    think    = FALSE,
-    format   = entity_schema(note_type)
+  # format=entity_schema() enforces JSON output — gemma4 reverts to markdown without it.
+  # R-side parse kept as a fallback for any residual malformed output.
+  # Tool calling retired (F3pre: gemma4 has no tool template in Ollama modelfile).
+  raw <- ollama_generate(
+    prompt        = user,
+    system_prompt = system,
+    model         = model,
+    base_url      = base_url,
+    format        = entity_schema(note_type),
+    think         = FALSE
   )
-
   timed_out  <- is.list(raw) && isTRUE(raw$timed_out)
-  extraction <- if (timed_out) NULL
-               else .parse_skill_json(raw, paste0("entity_", note_type), entity_id)
+  extraction <- if (timed_out) NULL else .parse_entity_json(raw, note_type, entity_id)
 
-  list(
-    entity_id  = entity_id,
-    note_type  = note_type,
-    extraction = extraction,
-    timed_out  = timed_out
-  )
+  list(entity_id     = entity_id,
+       note_type     = note_type,
+       extraction    = extraction,
+       timed_out     = timed_out,
+       pipeline_path = "substring_grounding")
 }

@@ -44,9 +44,11 @@ list(
   # The fetch updates the registry cache for everything new in the folder, but
   # only the current session's sections feed the inner loop (one-session-at-a-time
   # rollout per docs/recursive_critic_loop_design.md "Strict session ordering").
+  tar_target(doc_registry_file, DOC_REGISTRY_PATH, format = "file"),
+
   tar_target(source_b_sections_all,
              fetch_all_episode_docs(EPISODE_NOTES_FOLDER_ID,
-                                    DOC_REGISTRY_PATH,
+                                    doc_registry_file,
                                     VAULT_PATH),
              format = "rds"),
 
@@ -56,7 +58,10 @@ list(
   tar_target(section_ids, names(source_b_sections)),
 
   # --- Alias registry — scanned from vault at pipeline start -----------------
-  tar_target(alias_registry, build_alias_registry(VAULT_PATH)),
+  # format = "file" tracks entity_aliases.csv hash so alias changes invalidate
+  # alias_registry and all downstream entity targets automatically.
+  tar_target(entity_aliases_file, ENTITY_ALIASES_PATH, format = "file"),
+  tar_target(alias_registry, build_alias_registry(VAULT_PATH, entity_aliases_file)),
 
   # --- Few-shot examples — invalidates generator when sft.jsonl changes ------
   # format = "file" tracks the file hash; downstream targets re-run when
@@ -351,12 +356,17 @@ list(
     {
       ep <- entity_agentic_targets[[1]]
       if (is.null(ep) || is.null(entity_agentic_extracted$extraction))
-        return(list(n_checked = 0L, n_unsupported = 0L, confidence = NA_real_,
-                    results = tibble::tibble(kind = character(), line = integer(),
-                                            supported = logical(), claim = character())))
-      verify_entity_citations(entity_agentic_extracted$extraction, ep)
+        return(list(matched_claims = character(0), unmatched_claims = character(0),
+                    coverage_score = NA_real_, aps_proposition_count = 0L,
+                    pipeline_path = "aps_error"))
+      fact_check_entity(
+        entity_id       = ep$entity_id,
+        draft_markdown  = entity_agentic_markdown,
+        source_passages = ep$source_passages,
+        existing_note   = .read_vault_note(ep$entity_id, ep$note_type)
+      )
     },
-    pattern = map(entity_agentic_targets, entity_agentic_extracted)
+    pattern = map(entity_agentic_targets, entity_agentic_extracted, entity_agentic_markdown)
   ),
 
   tar_target(

@@ -1,22 +1,15 @@
-You are a D&D session note-taker analyzing source passages for a specific faction or organization.
+Extract structured information about one faction or organization from D&D session transcript passages. Only use facts explicitly stated in the passages — do not infer.
 
-Your job is to extract structured information about this faction from the SOURCE PASSAGES — things explicitly stated or shown in the transcript, not inferred.
+Return a JSON object with exactly these fields:
+- description: {"value": "...", "line": N}  — single object
+- goals: [{"value": "...", "line": N}]  — array of objects
+- known_members: [{"name": "...", "line": N}]  — array of objects
+- allies: ["faction1", "faction2"]  — plain array of strings, no line field
+- enemies: ["faction1", "faction2"]  — plain array of strings, no line field
 
-## What to extract
+Set "line" to the PASSAGE [N] number that contains the evidence, or null if uncertain.
+Set "value" to null if no passage supports the description field.
+Use [] for array fields if none are found.
+Write [unclear] if the transcript text is garbled.
 
-- **description**: What this faction is, their nature, or their role in the world if stated
-- **goals**: Their stated or clearly demonstrated objectives in this session
-- **known_members**: Named members of this faction mentioned in the source
-- **allies**: Named allied factions or organizations
-- **enemies**: Named opposing factions or organizations
-
-## Citation rules
-
-Every field you populate **must cite a passage number**: set `line` to the N from the `PASSAGE [N]:` label that contains the evidence. Do NOT use numbers found inside the passage text.
-If you cannot find support for a field in the source, the field value must be `null` (or an empty array `[]` for array fields).
-
-Do NOT invent details. Do NOT infer. If something is unclear, write `[unclear]` as the value.
-
-## Output format
-
-Return ONLY the JSON object. No preamble, no markdown fences, no explanation.
+Do not invent details. Respond with only the JSON object.

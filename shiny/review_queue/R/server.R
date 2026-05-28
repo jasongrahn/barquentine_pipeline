@@ -1,7 +1,7 @@
 server <- function(input, output, session) {
 
   ENTITY_STATUSES <- c("pending", "generation_failed", "critic_rejected")
-  ENTITY_TYPES    <- c("npc", "location", "faction", "session")
+  ENTITY_TYPES    <- c("npc", "pc", "location", "faction", "session")
 
   # ---------------------------------------------------------------------------
   # State
@@ -11,6 +11,7 @@ server <- function(input, output, session) {
   action_msg_rv <- reactiveVal(NULL)
   action_log_rv      <- reactiveVal(list())
   pending_approve_rv <- reactiveVal(NULL)
+  format_warn_rv     <- reactiveVal(NULL)
 
   .log_action <- function(section_id, entity_name, label, prior_draft = NULL,
                            was_merged = FALSE) {
@@ -135,7 +136,8 @@ server <- function(input, output, session) {
 
     tagList(
       render_review_pane(row),
-      uiOutput("action_msg_ui")
+      uiOutput("action_msg_ui"),
+      uiOutput("format_warn_ui")
     )
   })
 
@@ -144,6 +146,37 @@ server <- function(input, output, session) {
     if (is.null(msg)) return(NULL)
     tags$p(style = paste0("color:", msg$color, ";margin-top:8px;font-size:0.9em;"),
            msg$text)
+  })
+
+  output$format_warn_ui <- renderUI({
+    fw <- format_warn_rv()
+    if (is.null(fw)) return(NULL)
+    tags$div(
+      style = paste0("margin-top:10px;padding:10px 14px;border:1px solid #fd7e14;",
+                     "border-radius:4px;background:#fff8f0;"),
+      tags$strong(style = "color:#c85a00;", "Format issues — review before writing:"),
+      tags$ul(style = "margin:6px 0 10px 0;padding-left:18px;font-size:0.88em;",
+              lapply(fw$issues, tags$li)),
+      actionButton("format_warn_write_anyway", "Write anyway",
+                   class = "btn-warning btn-sm")
+    )
+  })
+
+  observeEvent(input$format_warn_write_anyway, {
+    fw <- format_warn_rv()
+    if (is.null(fw)) return()
+    format_warn_rv(NULL)
+    tryCatch(
+      .resolve_write(fw$row, fw$draft, fw$resolution, fw$vault_rel),
+      error = function(e) action_msg_rv(list(
+        text = paste0("Error: ", conditionMessage(e)), color = "#dc3545"))
+    )
+  })
+
+  # Clear format warning when the reviewer navigates to a different entity.
+  observe({
+    selected_id()
+    format_warn_rv(NULL)
   })
 
   # ---------------------------------------------------------------------------
@@ -228,6 +261,22 @@ server <- function(input, output, session) {
     resolve_item(row$section_id, resolution,
                  edited_draft = if (resolution == "accepted_with_edit") draft else NULL,
                  .queue_path = QUEUE_PATH_ABS)
+    if (note_type == "session") {
+      note_path_key <- sub("\\.md$", "", vault_rel)
+      reason <- if (resolution == "accepted_with_edit") "accepted with edits" else "auto-approved by pipeline"
+      tryCatch(
+        append_review_entry(
+          format_review_entry(note_path_key, reason, verdict = resolution),
+          vault_path = VAULT_PATH_ABS, dry_run = DRY_RUN
+        ),
+        error = function(e) NULL
+      )
+    }
+    tryCatch(
+      generate_training_data(.queue_path = QUEUE_PATH_ABS,
+                             .training_path = TRAINING_PATH_ABS),
+      error = function(e) NULL
+    )
     .log_action(row$section_id, .nc(row$entity_name, row$section_id), resolution,
                 prior_draft = .nc(row$draft, ""))
     action_msg_rv(list(
@@ -272,8 +321,18 @@ server <- function(input, output, session) {
 
     resolution <- if (tab %in% c("Edit", "Raw markdown")) "accepted_with_edit" else "accepted"
 
+    format_warn_rv(NULL)
+
     if (note_type == "session") {
       vault_rel <- file.path("sessions", paste0(entity_id, ".md"))
+      vr <- validate_note_format(draft, "session")
+      if (!vr$valid) {
+        format_warn_rv(list(issues = vr$issues, row = row, draft = draft,
+                            resolution = resolution, vault_rel = vault_rel))
+        action_msg_rv(list(text = "Format issues found \u2014 see below.",
+                           color = "#fd7e14"))
+        return()
+      }
       tryCatch(
         .resolve_write(row, draft, resolution, vault_rel),
         error = function(e) action_msg_rv(list(
@@ -332,6 +391,16 @@ server <- function(input, output, session) {
     err <- validate_rename_slug(slug, note_type, VAULT_PATH_ABS)
     if (!is.null(err)) {
       action_msg_rv(list(text = paste0("Slug error: ", err), color = "#dc3545"))
+      return()
+    }
+
+    # Pre-write format validation for entity notes
+    vr <- validate_note_format(draft, note_type)
+    if (!vr$valid) {
+      format_warn_rv(list(issues = vr$issues, row = row, draft = draft,
+                          resolution = resolution, vault_rel = vault_rel))
+      action_msg_rv(list(text = "Format issues found \u2014 see below.",
+                         color = "#fd7e14"))
       return()
     }
 
@@ -431,6 +500,21 @@ server <- function(input, output, session) {
     if (is.null(row)) return()
     reason <- .nc(input$reject_reason, "rejected_garbage")
     resolve_item(row$section_id, reason, .queue_path = QUEUE_PATH_ABS)
+    if (.nc(row$note_type, "") == "session") {
+      note_path_key <- file.path("sessions", row$section_id)
+      tryCatch(
+        append_review_entry(
+          format_review_entry(note_path_key, "rejected by reviewer", verdict = "rejected"),
+          vault_path = VAULT_PATH_ABS, dry_run = DRY_RUN
+        ),
+        error = function(e) NULL
+      )
+    }
+    tryCatch(
+      generate_training_data(.queue_path = QUEUE_PATH_ABS,
+                             .training_path = TRAINING_PATH_ABS),
+      error = function(e) NULL
+    )
     .log_action(row$section_id, .nc(row$entity_name, row$section_id), reason)
     action_msg_rv(list(text = paste0("Rejected: ", row$section_id, " (", reason, ")"),
                        color = "#dc3545"))

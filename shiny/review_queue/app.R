@@ -28,7 +28,7 @@ ui <- fluidPage(
     .conf-danger   { color: #dc3545; font-weight: bold; }
   "))),
 
-  titlePanel("Barquentine \u2014 Entity Review Queue"),
+  titlePanel("Barquentine \u2014 Review Queue"),
 
   sidebarLayout(
     sidebarPanel(

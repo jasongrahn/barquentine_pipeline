@@ -2,6 +2,7 @@
 *Version 4.3 — Complete*
 
 ## Changelog
+- v4.4: Critic reverted to `llama3.1:8b`; `qwen3.5:9b` retired — qwen3.5 + thinking + `format=` is silently broken (Ollama bug #14645). `gemma4:latest` remains generator. Phase F shipped vault-note identity anchoring and substring grounding. See `docs/phase_gemma4_optimization.md`.
 - v4.3: Local-only model architecture — `gemma4:latest` promoted to generator, `qwen3.5:9b` to critic, `llama3.1:8b` retired; `CRITIC_AUTO_APPROVE_THRESHOLD` set to `Inf` (all notes go through human review queue); Claude escalation paths removed from `R/critic.R` and `R/router.R`; see `docs/architecture_llm_evaluation.md` for the full analysis behind this decision
 - v4.2: HTML export fix documented; plain-text truncation finding recorded; `overwrite = TRUE` decision noted in _targets.R
 - v4.1: Basil corrected to PC; `aliases.json` replaced by vault-derived registry; `display_as` frontmatter field introduced

@@ -2,6 +2,13 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Working principles
+
+1. **Think before coding** — state assumptions explicitly; ask rather than guess; name what's unclear before touching code.
+2. **Simplicity first** — write the minimum code that solves the problem. No speculative features, no premature abstractions, no error handling for impossible scenarios.
+3. **Surgical changes** — only modify what's necessary. Don't improve adjacent code or refactor unbroken things. Match existing style. Note unrelated dead code but don't delete it.
+4. **Goal-driven execution** — define verifiable success criteria before starting (e.g. wet run ≥4/6, tests pass, vault file committed). Loop until met.
+
 ## What this project does
 
 Barquentine Pipeline reads D&D session notes from a Google Doc, generates structured wiki entries via local LLMs (Ollama), fact-checks them, routes results through a Shiny review UI, and commits approved notes to the `barquentine_wiki` vault repo. Human review decisions are captured as JSONL training data for future fine-tuning.
@@ -98,13 +105,15 @@ Per-stage internals (paths 1 and 2 only — path 3 bypasses generator + critic):
    - `flagged`/`rejected` → review queue
    - `agentic_no_critic` (path 3 only) → always review queue, no auto-approve
 
-4. **Review queue + Shiny UIs** — Pending items land in `review_queue/queue.csv`.
-   Two Shiny apps coexist:
-   - `shiny/app.R` (port 7474) — original session-note review UI.
-   - `shiny/review_queue/app.R` — Phase 4.5 entity-note review UI with sidebar
-     groups (Failed Generation, NPCs, Locations, Factions), regenerate modal,
-     Merge action (collapses captain + the_captain → basil and writes an alias
-     into the target's frontmatter), diff view, and per-entity critic-finding cards.
+4. **Review queue + Shiny UI** — Pending items land in `review_queue/queue.csv`.
+   Single canonical app: `shiny/review_queue/app.R` (port 7474). Handles sessions,
+   NPCs, Locations, and Factions in one sidebar-grouped view. Features: sidebar
+   groups (Sessions, Failed Generation, NPCs, Locations, Factions), regenerate
+   modal, Merge action (collapses captain + the_captain → basil and writes an alias
+   into the target's frontmatter), diff view, per-entity critic-finding cards,
+   iteration badges for critic-loop path sessions, and training data capture on
+   every approve/reject action.
+   `shiny/app.R` is archived at `docs/archive/legacy_shiny_app.R`.
 
    Entity notes are checked against `config/entity_exclusions.csv` (legacy slug
    drop list) and a new entity-type drop list (rows where
@@ -195,4 +204,4 @@ blindly — see `LESSONS.md` "Two-chain pc/pc_alias divergence".
   assign("my_fn", function(...) invisible(NULL), envir = globalenv())
   ```
   A plain assignment inside `test_that()` will not be found by the function under test.
-- `tests/testthat/test-git_commit.R` has pre-existing errors that depend on the fixture path `/the/vault` existing. Not a regression; not in current scope. Investigate only if asked.
+- `tests/testthat/test-git_commit.R:204` has a pre-existing test/implementation mismatch: the test expects `commit_vault()` to `stop("no note paths")` when git_status returns no stageable notes, but the implementation uses `message()` + `return(invisible(NULL))`. Not a regression from the 2026-05-23 git_commit bug fix; fix the test expectation or the implementation behaviour. Investigate only if asked.

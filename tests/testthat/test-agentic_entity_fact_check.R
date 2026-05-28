@@ -1,140 +1,130 @@
 library(testthat)
 source(test_path("../../config.R"))
+source(test_path("../../R/ollama.R"))
 source(test_path("../../R/agentic_entity_fact_check.R"))
 
-make_entity_record <- function(passages = c(
+make_passages <- function() c(
   "Attorrnash is a githyanki soldier stationed on the Giff Flotilla.",
   "He spoke briefly with the Captain and seemed suspicious.",
   "The location was confirmed as the Astral Sea region."
-)) {
-  list(
-    entity_id          = "attorrnash",
-    entity_name        = "Attorrnash",
-    note_type          = "npc",
-    source_passages    = passages,
-    source_episode_ids = "s02e34"
-  )
-}
+)
 
-# ---- verify_entity_citations — null extraction ------------------------------
+# ---- .split_draft_claims ----------------------------------------------------
 
-test_that("NULL extraction returns NA confidence and zero counts", {
-  rec    <- make_entity_record()
-  result <- verify_entity_citations(NULL, rec)
-  expect_equal(result$n_checked, 0L)
-  expect_equal(result$n_unsupported, 0L)
-  expect_true(is.na(result$confidence))
-  expect_equal(nrow(result$results), 0L)
+test_that("strips YAML frontmatter before splitting", {
+  draft <- "---\nname: Attorrnash\nrole: soldier\n---\nHe is a githyanki soldier. He seems suspicious."
+  claims <- .split_draft_claims(draft)
+  expect_false(any(grepl("^---", claims)))
+  expect_false(any(grepl("name:", claims)))
+  expect_true(any(grepl("githyanki", claims)))
 })
 
-test_that("all-null-line extraction returns NA confidence", {
-  extraction <- list(
-    description           = list(value = NULL, line = NULL),
-    aliases               = list(),
-    exhibited_personality = list(value = NULL, line = NULL),
-    role_in_story         = list(value = NULL, line = NULL),
-    affiliations          = list()
-  )
-  rec    <- make_entity_record()
-  result <- verify_entity_citations(extraction, rec)
-  expect_equal(result$n_checked, 0L)
-  expect_true(is.na(result$confidence))
+test_that("strips ## headers", {
+  draft <- "## Background\nHe is a githyanki soldier. He seems suspicious."
+  claims <- .split_draft_claims(draft)
+  expect_false(any(grepl("^##", claims)))
 })
 
-# ---- verify_entity_citations — supported citations --------------------------
-
-test_that("value present in cited passage returns supported = TRUE", {
-  extraction <- list(
-    description           = list(value = "githyanki soldier", line = 1L),
-    aliases               = list(),
-    exhibited_personality = list(value = NULL, line = NULL),
-    role_in_story         = list(value = NULL, line = NULL),
-    affiliations          = list()
-  )
-  rec    <- make_entity_record()
-  result <- verify_entity_citations(extraction, rec)
-  expect_equal(result$n_checked, 1L)
-  expect_equal(result$n_unsupported, 0L)
-  expect_equal(result$confidence, 1.0)
-  expect_true(result$results$supported[[1L]])
+test_that("drops claims shorter than 10 chars", {
+  draft <- "Hi. A short one. This is a longer valid sentence indeed."
+  claims <- .split_draft_claims(draft)
+  expect_true(all(nchar(claims) >= 10L))
 })
 
-test_that("substring check is case-insensitive", {
-  extraction <- list(
-    description           = list(value = "GITHYANKI SOLDIER", line = 1L),
-    aliases               = list(),
-    exhibited_personality = list(value = NULL, line = NULL),
-    role_in_story         = list(value = NULL, line = NULL),
-    affiliations          = list()
-  )
-  rec    <- make_entity_record()
-  result <- verify_entity_citations(extraction, rec)
-  expect_true(result$results$supported[[1L]])
+test_that("returns empty for NULL or blank draft", {
+  expect_equal(.split_draft_claims(NULL), character(0))
+  expect_equal(.split_draft_claims(""), character(0))
 })
 
-# ---- verify_entity_citations — unsupported citations -----------------------
+# ---- fact_check_entity — substring grounding --------------------------------
 
-test_that("cited line out of range returns supported = FALSE", {
-  extraction <- list(
-    description           = list(value = "a soldier", line = 99L),  # passage 99 doesn't exist
-    aliases               = list(),
-    exhibited_personality = list(value = NULL, line = NULL),
-    role_in_story         = list(value = NULL, line = NULL),
-    affiliations          = list()
+test_that("claim matching source text exactly is matched", {
+  result <- fact_check_entity(
+    entity_id       = "attorrnash",
+    draft_markdown  = "Attorrnash is a githyanki soldier stationed on the Giff Flotilla.",
+    source_passages = make_passages()
   )
-  rec    <- make_entity_record()
-  result <- verify_entity_citations(extraction, rec)
-  expect_false(result$results$supported[[1L]])
-  expect_equal(result$n_unsupported, 1L)
-  expect_lt(result$confidence, 1.0)
+  expect_equal(result$pipeline_path, "substring_grounding")
+  expect_equal(result$coverage_score, 1.0)
+  expect_length(result$matched_claims, 1L)
+  expect_length(result$unmatched_claims, 0L)
 })
 
-test_that("value not present in cited passage returns supported = FALSE", {
-  extraction <- list(
-    description           = list(value = "completely fabricated detail", line = 1L),
-    aliases               = list(),
-    exhibited_personality = list(value = NULL, line = NULL),
-    role_in_story         = list(value = NULL, line = NULL),
-    affiliations          = list()
+test_that("claim not present in source is unmatched", {
+  result <- fact_check_entity(
+    entity_id       = "attorrnash",
+    draft_markdown  = "Attorrnash is a powerful wizard of great renown.",
+    source_passages = make_passages()
   )
-  rec    <- make_entity_record()
-  result <- verify_entity_citations(extraction, rec)
-  expect_false(result$results$supported[[1L]])
+  expect_equal(result$pipeline_path, "substring_grounding")
+  expect_equal(result$coverage_score, 0.0)
+  expect_length(result$matched_claims, 0L)
+  expect_length(result$unmatched_claims, 1L)
 })
 
-# ---- verify_entity_citations — array fields ---------------------------------
-
-test_that("array affiliations with line citations are checked", {
-  # A data.frame (as fromJSON would produce for an array of objects)
-  affiliations_df <- data.frame(name = "Giff Flotilla", line = 1L,
-                                stringsAsFactors = FALSE)
-  extraction <- list(
-    description           = list(value = NULL, line = NULL),
-    aliases               = list(),
-    exhibited_personality = list(value = NULL, line = NULL),
-    role_in_story         = list(value = NULL, line = NULL),
-    affiliations          = affiliations_df
+test_that("direction: claim inside source_text (exact substring match)", {
+  # Claim is a complete sentence from the source — should match
+  result <- fact_check_entity(
+    entity_id       = "attorrnash",
+    draft_markdown  = "Attorrnash is a githyanki soldier stationed on the Giff Flotilla.",
+    source_passages = c("Attorrnash is a githyanki soldier stationed on the Giff Flotilla.")
   )
-  rec    <- make_entity_record()
-  result <- verify_entity_citations(extraction, rec)
-  expect_equal(result$n_checked, 1L)
-  # "Giff Flotilla" appears in passage 1
-  expect_true(result$results$supported[[1L]])
+  expect_equal(result$coverage_score, 1.0)
 })
 
-# ---- confidence arithmetic --------------------------------------------------
-
-test_that("confidence = n_supported / n_checked", {
-  extraction <- list(
-    description           = list(value = "githyanki soldier", line = 1L),  # supported
-    aliases               = list(),
-    exhibited_personality = list(value = "fabricated trait xyz", line = 1L),  # unsupported
-    role_in_story         = list(value = NULL, line = NULL),
-    affiliations          = list()
+test_that("match is case-insensitive", {
+  result <- fact_check_entity(
+    entity_id       = "attorrnash",
+    draft_markdown  = "ATTORRNASH IS A GITHYANKI SOLDIER STATIONED ON THE GIFF FLOTILLA.",
+    source_passages = make_passages()
   )
-  rec    <- make_entity_record()
-  result <- verify_entity_citations(extraction, rec)
-  expect_equal(result$n_checked, 2L)
-  expect_equal(result$n_unsupported, 1L)
-  expect_equal(result$confidence, 0.5)
+  expect_equal(result$coverage_score, 1.0)
+})
+
+test_that("empty draft returns NA coverage_score with substring_grounding path", {
+  result <- fact_check_entity("e", "", make_passages())
+  expect_true(is.na(result$coverage_score))
+  expect_equal(result$pipeline_path, "substring_grounding")
+})
+
+test_that("aps_proposition_count is source sentence count (integer >= 1)", {
+  result <- fact_check_entity("e", "A sentence here for testing purposes.", make_passages())
+  expect_type(result$aps_proposition_count, "integer")
+  expect_gte(result$aps_proposition_count, 1L)
+})
+
+test_that("returns expected field names", {
+  result <- fact_check_entity("e", "A sentence here for testing purposes.", make_passages())
+  expect_true(all(c("matched_claims", "unmatched_claims", "coverage_score",
+                    "aps_proposition_count", "pipeline_path") %in% names(result)))
+})
+
+test_that("paraphrased claim with high word overlap is matched", {
+  result <- fact_check_entity(
+    entity_id       = "attorrnash",
+    draft_markdown  = "Attorrnash is a soldier posted near the Giff Flotilla region.",
+    source_passages = make_passages()
+  )
+  expect_equal(result$coverage_score, 1.0)
+  expect_length(result$matched_claims, 1L)
+})
+
+test_that("paraphrased claim with low word overlap is unmatched", {
+  result <- fact_check_entity(
+    entity_id       = "attorrnash",
+    draft_markdown  = "Attorrnash commands armies of darkness from a shadowy citadel.",
+    source_passages = make_passages()
+  )
+  expect_equal(result$coverage_score, 0.0)
+  expect_length(result$unmatched_claims, 1L)
+})
+
+test_that("no ollama_generate call is made (pure R, no LLM)", {
+  # fact_check_entity must not call ollama_generate; stub it to error if called
+  assign("ollama_generate", function(...) stop("should not be called"), envir = globalenv())
+  on.exit(rm("ollama_generate", envir = globalenv()), add = TRUE)
+
+  expect_no_error(
+    fact_check_entity("e", "A sentence here for testing purposes.", make_passages())
+  )
 })
