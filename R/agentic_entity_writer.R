@@ -185,8 +185,10 @@ if (!exists(".fmt_yaml_list", mode = "function")) {
   fm   <- .entity_frontmatter(entity_id, note_type, character(0), episodes)
   body <- character(0)
 
-  desc <- .get_value(extraction$description)
-  if (is.null(desc)) desc <- .extract_vault_section(existing_note, "Description")
+  desc       <- .get_value(extraction$description)
+  vault_desc <- .extract_vault_section(existing_note, "Description")
+  if (!is.null(vault_desc) && (is.null(desc) || nchar(vault_desc) > nchar(desc)))
+    desc <- vault_desc
   if (!is.null(desc))
     body <- c(body, "## Description", "", desc, "")
 

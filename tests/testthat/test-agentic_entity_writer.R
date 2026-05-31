@@ -211,13 +211,13 @@ test_that("location with empty notable_features falls back to vault Notable Feat
   expect_true(grepl("Grand lighthouse", md))
 })
 
-test_that("non-null extraction fields are not overridden by vault fallback", {
-  ext  <- make_location_extraction()
-  note <- "## Description\n\nVault description that should NOT appear.\n"
+test_that("extraction description wins when vault description is shorter", {
+  ext  <- make_location_extraction()  # description = "A bustling port city." (21 chars)
+  note <- "## Description\n\nOld port.\n"  # 9 chars < 21 → extraction wins
   md   <- assemble_entity_markdown(ext, make_entity_record("location"),
                                     existing_note = note)
   expect_true(grepl("A bustling port city", md))
-  expect_false(grepl("should NOT appear", md))
+  expect_false(grepl("Old port", md))
 })
 
 test_that("location with model-emitted 'None' description falls back to vault", {
@@ -232,6 +232,21 @@ test_that("location with model-emitted 'None' description falls back to vault", 
                                     existing_note = note)
   expect_true(grepl("A bustling port town", md))
   expect_true(grepl("The Southern Coast", md))
+})
+
+test_that("vault description wins when longer than extracted description", {
+  ext  <- list(
+    description      = list(value = "A temporary stopping point.", line = 1L),
+    region           = list(value = NULL, line = NULL),
+    notable_features = list(),
+    events_witnessed = list()
+  )
+  # vault is 97 chars; extraction is 27 chars → vault should win
+  note <- "## Description\n\nA large flotilla of ships drifting through the Astral Sea, home to hundreds of Giff mercenaries.\n"
+  md   <- assemble_entity_markdown(ext, make_entity_record("location"),
+                                    existing_note = note)
+  expect_true(grepl("large flotilla", md))
+  expect_false(grepl("A temporary stopping point", md))
 })
 
 test_that("npc assembly ignores existing_note (fallback is location-only)", {
