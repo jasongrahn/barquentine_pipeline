@@ -33,10 +33,13 @@ if (!exists(".fmt_yaml_list", mode = "function")) {
 }
 
 # Returns the string value of a {value, line} field, or NULL if value is null/NA.
+# Also treats model-emitted null-signals ("None", "null", "N/A") as NULL.
 .get_value <- function(field) {
   if (is.null(field)) return(NULL)
   v <- if (is.list(field)) field$value else NULL
-  if (is.null(v) || is.na(v) || !nzchar(trimws(v))) NULL else trimws(v)
+  if (is.null(v) || is.na(v) || !nzchar(trimws(v))) return(NULL)
+  v <- trimws(v)
+  if (tolower(v) %in% c("none", "null", "n/a")) NULL else v
 }
 
 # Format an array of {name, line} or {value, line} or {feature, line} items

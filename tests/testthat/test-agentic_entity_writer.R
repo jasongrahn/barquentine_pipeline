@@ -220,6 +220,20 @@ test_that("non-null extraction fields are not overridden by vault fallback", {
   expect_false(grepl("should NOT appear", md))
 })
 
+test_that("location with model-emitted 'None' description falls back to vault", {
+  ext  <- list(
+    description      = list(value = "None", line = NULL),
+    region           = list(value = "None", line = NULL),
+    notable_features = list(),
+    events_witnessed = list()
+  )
+  note <- "## Description\n\nA bustling port town.\n\n## Region\n\nThe Southern Coast\n"
+  md   <- assemble_entity_markdown(ext, make_entity_record("location"),
+                                    existing_note = note)
+  expect_true(grepl("A bustling port town", md))
+  expect_true(grepl("The Southern Coast", md))
+})
+
 test_that("npc assembly ignores existing_note (fallback is location-only)", {
   md <- assemble_entity_markdown(make_npc_extraction(), make_entity_record("npc"),
                                    existing_note = "## Overview\n\nSome vault text.")
