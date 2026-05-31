@@ -1,6 +1,6 @@
 # Stack Rank — Active Backlog
 
-Last updated: 2026-05-27 (Wet run #7 complete — s02e37. lumi=1.0, basil=1.0, the_giff_flotilla=1.0, room=0.5, attorrnash=0.25. All entity-agentic P1 blockers cleared. Remaining non-blockers: giff_flotilla draft quality thin (coverage=1.0 but content is passage-summaries, not vault-note facts); room score fluctuates 0–0.5 (LLM stochasticity).)
+Last updated: 2026-05-31 (Wet run #8 complete — s02e37 with location-writer-fallback active. notable_features now injected from vault note (fallback fired on empty list); region extracted correctly ("The Astral Sea."). Description remains vague non-null Gemma4 output — fallback cannot override non-null. Root cause confirmed: extraction returns vague-but-non-null description for sparse-passage locations, not null. Fix requires extraction-side prompt change, not writer-side fallback.)
 
 Single-page checklist. Detail entries live in `docs/ideas.md`,
 `docs/phase_next_backlog.md`, and `docs/phase_agentic_extraction_integration.md` —
@@ -80,10 +80,14 @@ move to bottom of its section, don't delete.
 
 ## P2 — Quality / phased work
 
-- [ ] **giff_flotilla (location) draft quality** — coverage=1.0 but content is thin
-  passage-based summaries, not vault-note facts. Fix: in `R/agentic_entity_writer.R::assemble_location_markdown()`,
-  detect null/sparse extraction fields and fall back to parsed vault note content for those fields.
-  [ideas.md → "Feed existing vault note"]
+- [ ] **giff_flotilla (location) draft quality** — writer fallback shipped (wet run #8,
+  2026-05-31): notable_features and region now pull from vault note when extraction is
+  null/empty. Remaining gap: description field returns vague non-null Gemma4 output
+  ("A setting for interactions..."), blocking the fallback. Root cause is extraction-prompt
+  behaviour on sparse-passage locations — Gemma4 generates plausible-but-vague prose
+  rather than null when passages are thin. Fix direction: extraction prompt for location
+  entities should prefer null over vague synthesis when passage evidence is insufficient.
+  [docs/phase_4_2_research_plan.md §4 — sparse-passage thin summaries]
 - [x] **`pipeline_path` column on `queue.csv`** — done; values: `critic_loop`,
   `aps_grounding`, `aps_error`. Legacy rows backfilled `critic_loop`.
   (Phase C, commit `3a2c83e`, 2026-05-14)
@@ -114,6 +118,11 @@ move to bottom of its section, don't delete.
   [phase_next_backlog.md §2]
 - [ ] **`played_by` frontmatter on PC notes** —
   [phase_next_backlog.md §3]
+- [ ] **PC history timeline** — append-only `## Session History` section on PC wiki
+  pages; one entry per session processed, chronological. Doubles as the per-PC context
+  file fed into future entity extractions (extends vault-note anchor beyond single-note
+  identity grounding). Prerequisite for meaningful chronological replay from s1e0 through
+  current sessions to surface PC growth arcs. [context_06_backlog.md]
 
 ## P3 — Backlog
 

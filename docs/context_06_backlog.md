@@ -17,6 +17,7 @@
 | **Chunk-extraction SFT capture** | Phase 2 training data for agentic entity path. `docs/phase_4_2/phases/2_training.md`. |
 | **Background regeneration queue** | Non-blocking Shiny regen via `callr::r_bg()`. `shiny/review_queue/R/server.R:447–499`. |
 | **`played_by` frontmatter on PC notes** | Add player column to `config/protected_entities.csv`; write to frontmatter; validator enforces for known PC slugs. |
+| **PC history timeline** | Append-only `## Session History` section on PC wiki pages — one bullet per processed session, in episode order. Acts as cumulative context file injected into future entity extractions (extends the vault-note anchor beyond single-snapshot identity grounding). Enables chronological replay from s1e0 to build PC growth arcs from early transcripts that lack speaker attribution. Writer appends rather than overwrites; targets pipeline threads the current PC note as both identity anchor and history accumulator. |
 
 ### P3 — Backlog
 
