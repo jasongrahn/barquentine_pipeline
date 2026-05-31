@@ -1,6 +1,6 @@
 # Stack Rank — Active Backlog
 
-Last updated: 2026-05-31 (Wet run #8 complete — s02e37 with location-writer-fallback active. notable_features now injected from vault note (fallback fired on empty list); region extracted correctly ("The Astral Sea."). Description remains vague non-null Gemma4 output — fallback cannot override non-null. Root cause confirmed: extraction returns vague-but-non-null description for sparse-passage locations, not null. Fix requires extraction-side prompt change, not writer-side fallback.)
+Last updated: 2026-05-31 (Wet run #10 complete. Three extraction-side fixes applied: system.md null-preference instruction, user_template vault-first rule, .get_value() Python-style "None" string handling. region and notable_features now consistently use vault fallback. description still returns vague non-null Gemma4 prose — model capability boundary confirmed. Next fix direction: writer-side heuristic (prefer vault description when vault is longer than extracted description).)
 
 Single-page checklist. Detail entries live in `docs/ideas.md`,
 `docs/phase_next_backlog.md`, and `docs/phase_agentic_extraction_integration.md` —
@@ -80,13 +80,14 @@ move to bottom of its section, don't delete.
 
 ## P2 — Quality / phased work
 
-- [ ] **giff_flotilla (location) draft quality** — writer fallback shipped (wet run #8,
-  2026-05-31): notable_features and region now pull from vault note when extraction is
-  null/empty. Remaining gap: description field returns vague non-null Gemma4 output
-  ("A setting for interactions..."), blocking the fallback. Root cause is extraction-prompt
-  behaviour on sparse-passage locations — Gemma4 generates plausible-but-vague prose
-  rather than null when passages are thin. Fix direction: extraction prompt for location
-  entities should prefer null over vague synthesis when passage evidence is insufficient.
+- [ ] **giff_flotilla (location) draft quality** — WR#10 (2026-05-31): region and
+  notable_features now correctly use vault fallback. Three extraction-side fixes applied:
+  (1) system.md null-preference instruction, (2) user_template vault-first update rule,
+  (3) .get_value() handles model-emitted "None" string. description remains the only gap —
+  Gemma4 always returns vague non-null prose for sparse-passage locations regardless of
+  prompt instruction. Model capability boundary confirmed. Next fix: writer-side heuristic —
+  when vault has a description AND extracted description is shorter than vault description,
+  prefer vault. This does not require model cooperation.
   [docs/phase_4_2_research_plan.md §4 — sparse-passage thin summaries]
 - [x] **`pipeline_path` column on `queue.csv`** — done; values: `critic_loop`,
   `aps_grounding`, `aps_error`. Legacy rows backfilled `critic_loop`.
