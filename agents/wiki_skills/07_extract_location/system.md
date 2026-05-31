@@ -8,6 +8,7 @@ Return a JSON object with exactly these fields:
 
 Set "line" to the PASSAGE [N] number that contains the evidence, or null if uncertain.
 Set "value" to null if no passage or existing note supports the field.
+Prefer null over vague generalities — if the only description you can write is generic (e.g., "a place where characters meet", "a setting for interactions"), return null rather than synthesising imprecise prose.
 Use [] for array fields if none are found.
 Write [unclear] if the transcript text is garbled.
 
