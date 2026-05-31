@@ -175,6 +175,59 @@ test_that("faction markdown contains Allies and Enemies sections", {
 })
 
 # ---------------------------------------------------------------------------
+# Location fallback from existing vault note
+# ---------------------------------------------------------------------------
+
+make_sparse_location_extraction <- function() {
+  list(
+    description      = list(value = NULL, line = NULL),
+    region           = list(value = NULL, line = NULL),
+    notable_features = list(),
+    events_witnessed = list()
+  )
+}
+
+test_that("location with null description falls back to vault Description section", {
+  ext  <- make_sparse_location_extraction()
+  note <- "---\nslug: port_town\n---\n\n## Description\n\nA bustling port town.\n\n## Region\n\nThe Southern Coast\n"
+  md   <- assemble_entity_markdown(ext, make_entity_record("location"),
+                                    existing_note = note)
+  expect_true(grepl("A bustling port town", md))
+})
+
+test_that("location with null region falls back to vault Region section", {
+  ext  <- make_sparse_location_extraction()
+  note <- "## Region\n\nThe Southern Coast\n"
+  md   <- assemble_entity_markdown(ext, make_entity_record("location"),
+                                    existing_note = note)
+  expect_true(grepl("The Southern Coast", md))
+})
+
+test_that("location with empty notable_features falls back to vault Notable Features", {
+  ext  <- make_sparse_location_extraction()
+  note <- "## Notable Features\n\n- Grand lighthouse\n- Ancient ruins\n"
+  md   <- assemble_entity_markdown(ext, make_entity_record("location"),
+                                    existing_note = note)
+  expect_true(grepl("Grand lighthouse", md))
+})
+
+test_that("non-null extraction fields are not overridden by vault fallback", {
+  ext  <- make_location_extraction()
+  note <- "## Description\n\nVault description that should NOT appear.\n"
+  md   <- assemble_entity_markdown(ext, make_entity_record("location"),
+                                    existing_note = note)
+  expect_true(grepl("A bustling port city", md))
+  expect_false(grepl("should NOT appear", md))
+})
+
+test_that("npc assembly ignores existing_note (fallback is location-only)", {
+  md <- assemble_entity_markdown(make_npc_extraction(), make_entity_record("npc"),
+                                   existing_note = "## Overview\n\nSome vault text.")
+  expect_true(grepl("## Overview", md))
+  expect_false(grepl("Some vault text", md))
+})
+
+# ---------------------------------------------------------------------------
 # Unknown note_type
 # ---------------------------------------------------------------------------
 

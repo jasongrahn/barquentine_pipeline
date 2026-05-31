@@ -185,5 +185,6 @@ extract_entity <- function(entity_record,
        note_type     = note_type,
        extraction    = extraction,
        timed_out     = timed_out,
-       pipeline_path = "substring_grounding")
+       pipeline_path = "substring_grounding",
+       existing_note = existing_note)
 }

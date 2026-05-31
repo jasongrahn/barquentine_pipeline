@@ -346,7 +346,8 @@ list(
     {
       ep <- entity_agentic_targets[[1]]
       if (is.null(ep) || is.null(entity_agentic_extracted$extraction)) return("")
-      assemble_entity_markdown(entity_agentic_extracted$extraction, ep)
+      assemble_entity_markdown(entity_agentic_extracted$extraction, ep,
+                               existing_note = entity_agentic_extracted$existing_note %||% "")
     },
     pattern = map(entity_agentic_targets, entity_agentic_extracted)
   ),
