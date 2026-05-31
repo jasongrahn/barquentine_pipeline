@@ -53,9 +53,17 @@ test_that(".truncate_passages always keeps at least one passage", {
   expect_equal(length(result), 1L)
 })
 
-# ---- extract_entity() — stub .call_ollama_skill ----------------------------
-
 SKILLS_DIR <- test_path("../../agents/wiki_skills")
+
+# ---- location system prompt contract ----------------------------------------
+
+test_that("location system prompt prefers null over vague generalities", {
+  system_prompt <- .load_skill("07_extract_location", "system", SKILLS_DIR)
+  expect_true(grepl("vague generalities", system_prompt, fixed = TRUE),
+    info = "Prompt must instruct model to return null rather than synthesising imprecise prose")
+})
+
+# ---- extract_entity() — stub .call_ollama_skill ----------------------------
 
 test_that("extract_entity returns correct entity_id and note_type", {
   assign("ollama_generate", function(...) '{"description": {"value": "A githyanki soldier.", "line": 1}, "aliases": [], "exhibited_personality": {"value": null, "line": null}, "role_in_story": {"value": null, "line": null}}',
