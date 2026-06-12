@@ -225,88 +225,12 @@ list(
     }
   ),
 
-  # Entity notes — inner loop: generate → critic → revise (Phase 1)
-  # draft_with_refinement() owns the full generate→critic→revise cycle for all
-  # note types. entity_passages is an unnamed list; [[1]] unwraps the record.
-  # Existing vault note is passed as prior_draft so generation produces a coherent
-  # updated note rather than a fragment.
-  tar_target(
-    entity_refined,
-    {
-      ep <- entity_passages[[1]]
-      if (is.null(ep)) return(list(
-        best_draft = NULL, best_confidence = -Inf,
-        final_verdict = list(verdict = "skipped", confidence = NA_real_,
-                             issues = list(), source_quotes = list()),
-        iteration_log = list(), iteration_count = 1L,
-        claude_used = FALSE, escalation_reason = NULL
-      ))
-      # PCs have no legacy draft path — always skip to agentic chain or skip entirely.
-      if (isTRUE(ep$note_type == "pc"))
-        return(list(
-          best_draft = NULL, best_confidence = -Inf,
-          final_verdict = list(verdict = "skipped", confidence = NA_real_,
-                               issues = list(), source_quotes = list()),
-          iteration_log = list(), iteration_count = 1L,
-          claude_used = FALSE, escalation_reason = "pc_no_legacy_path"
-        ))
-      # Skip legacy critic-loop for sessions routed through the agentic entity chain.
-      if (length(AGENTIC_ENTITY_SESSION_IDS) > 0L &&
-          any(ep$source_episode_ids %in% AGENTIC_ENTITY_SESSION_IDS))
-        return(list(
-          best_draft = NULL, best_confidence = -Inf,
-          final_verdict = list(verdict = "skipped", confidence = NA_real_,
-                               issues = list(), source_quotes = list()),
-          iteration_log = list(), iteration_count = 1L,
-          claude_used = FALSE, escalation_reason = "agentic_entity_opt_in"
-        ))
-      rel_path   <- .entity_relative_path(ep$entity_id, ep$note_type)
-      full_path  <- file.path(VAULT_PATH, rel_path)
-      vault_note <- if (file.exists(full_path))
-        paste(readLines(full_path, warn = FALSE), collapse = "\n") else NULL
-      draft_with_refinement(
-        source_text     = paste(ep$source_passages, collapse = "\n\n---\n\n"),
-        section_id      = ep$entity_id,
-        note_type       = ep$note_type,
-        entity_name     = ep$entity_name,
-        source_passages = ep$source_passages,
-        prior_draft     = vault_note
-      )
-    },
-    pattern = map(entity_passages)
-  ),
-
-  # Dispatch — best_draft from inner loop → staging queue
-  tar_target(
-    entity_dispatched,
-    {
-      ep <- entity_passages[[1]]
-      if (is.null(ep)) return(invisible(NULL))
-      # PCs have no legacy dispatch path.
-      if (isTRUE(ep$note_type == "pc")) return(invisible(NULL))
-      # Skip dispatch for sessions handled by the agentic entity chain.
-      if (length(AGENTIC_ENTITY_SESSION_IDS) > 0L &&
-          any(ep$source_episode_ids %in% AGENTIC_ENTITY_SESSION_IDS))
-        return(invisible(NULL))
-      dispatch_entity_note(
-        refinement_result  = entity_refined,
-        entity_id          = ep$entity_id,
-        entity_name        = ep$entity_name,
-        note_type          = ep$note_type,
-        source_passages    = ep$source_passages,
-        source_episode_ids = ep$source_episode_ids
-      )
-    },
-    pattern = map(entity_refined, entity_passages)
-  ),
-
   # Consolidate entity staging files into queue.csv.
   # cue=always: dispatched targets return same shape across runs (targets would
   # otherwise skip consolidation and leave staging files unmerged).
   tar_target(
     entity_queue_consolidated,
     {
-      entity_dispatched
       entity_agentic_dispatched
       consolidate_queue()
     },
@@ -314,17 +238,15 @@ list(
   ),
 
   # --- Phase 4.2: Agentic entity-note chain ----------------------------------
-  # Per-session opt-in via AGENTIC_ENTITY_SESSION_IDS (character(0) = disabled).
-  # When empty, entity_agentic_targets returns list(NULL) and all downstream
-  # branches short-circuit — no LLM calls fire.
+  # Now the default for all entity passages — the legacy critic branch was
+  # removed (Phase G1). Every passage with source episodes routes agentic;
+  # list(NULL) sentinel when none qualify so downstream pattern = map() declares.
 
   tar_target(
     entity_agentic_targets,
     {
-      if (length(AGENTIC_ENTITY_SESSION_IDS) == 0L) return(list(NULL))
       keep <- vapply(entity_passages, function(ep) {
-        !is.null(ep) && length(ep$source_episode_ids) > 0L &&
-          any(ep$source_episode_ids %in% AGENTIC_ENTITY_SESSION_IDS)
+        !is.null(ep) && length(ep$source_episode_ids) > 0L
       }, logical(1))
       if (!any(keep)) list(NULL) else entity_passages[keep]
     }

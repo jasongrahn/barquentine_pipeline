@@ -51,7 +51,6 @@ Before a live run, set `DRY_RUN <- FALSE` in `config.R`. Update `CURRENT_SESSION
 | `CRITIC_ESCALATE_THRESHOLD` | Confidence < this AND flagged → Claude escalation (default 0.60) |
 | `OLLAMA_MODEL` / `OLLAMA_CRITIC_MODEL` | Model names — must match what Ollama has pulled |
 | `AGENTIC_VTT_SESSION_IDS` | Per-session opt-in for agentic session flow |
-| `AGENTIC_ENTITY_SESSION_IDS` | Per-session opt-in for agentic entity flow (Phase 4.2) |
 
 `ANTHROPIC_API_KEY` lives in `~/.Renviron`, never in the repo. Google Drive auth cached via `googledrive::drive_auth()`.
 

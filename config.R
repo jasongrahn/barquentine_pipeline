@@ -92,10 +92,7 @@ DRY_RUN_PATH    <- "/tmp/barquentine-preview"
 # -----------------------------------------------------------------------------
 # Recursive critic loop
 # -----------------------------------------------------------------------------
-DRAFT_MAX_ITERATIONS          <- 6L   # generator→critic loops before Claude escalation
-DRAFT_PARSE_RETRY_BUDGET      <- 2L   # parse_error retries that do NOT count toward the cap
 PROCESS_ONE_SESSION           <- FALSE # FALSE = process all sessions; TRUE = process only CURRENT_SESSION (for dry-run validation)
-OLLAMA_TIMEOUT_BACKOFF_SECONDS <- 30L  # sleep after a section that had an Ollama timeout
 
 # -----------------------------------------------------------------------------
 # Regeneration queue
@@ -119,10 +116,9 @@ ACTIVE_EPISODES <- NULL
 # Episodes NOT in this vector run the existing critic-loop path unchanged.
 AGENTIC_VTT_SESSION_IDS  <- c("s02e34", "s02e35", "s02e36", "s02e37")
 
-# --- Phase 4.2: agentic entity-note chain opt-in --------------------------
-# Add episode IDs here to run entity notes through schema-enforced extraction
-# instead of the legacy critic-loop path. Start empty; Phase 4.1 adds first ID.
-AGENTIC_ENTITY_SESSION_IDS        <- c("s02e36", "s02e37")
+# --- Phase 4.2: agentic entity-note chain (now the default) ---------------
+# All entity notes run through schema-enforced extraction. The legacy
+# critic-loop entity path was retired (branch cleanup/retire-critic-loop).
 AGENTIC_ENTITY_SCHEMA_VERSION     <- "v2"
 AGENTIC_ENTITY_PASSAGE_WORD_LIMIT <- 8000L
 AGENTIC_ENTITY_MODEL              <- OLLAMA_MODEL
