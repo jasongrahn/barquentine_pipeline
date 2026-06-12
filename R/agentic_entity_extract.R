@@ -129,7 +129,8 @@ extract_entity <- function(entity_record,
                            recap_context = "",
                            model         = AGENTIC_ENTITY_MODEL,
                            base_url      = OLLAMA_BASE_URL,
-                           skills_dir    = "agents/wiki_skills") {
+                           skills_dir    = "agents/wiki_skills",
+                           user_feedback = NULL) {
   entity_id   <- entity_record$entity_id
   entity_name <- entity_record$entity_name
   note_type   <- entity_record$note_type
@@ -166,6 +167,15 @@ extract_entity <- function(entity_record,
     existing_note_block  = existing_note_block,
     .open = "{", .close = "}"
   )
+
+  # Append reviewer feedback (regeneration path) so the model addresses it.
+  if (!is.null(user_feedback) && nzchar(trimws(user_feedback))) {
+    user <- paste0(
+      user,
+      "\n\nREVIEWER FEEDBACK (address this in the extraction):\n",
+      trimws(user_feedback)
+    )
+  }
 
   # format=entity_schema() enforces JSON output — gemma4 reverts to markdown without it.
   # R-side parse kept as a fallback for any residual malformed output.

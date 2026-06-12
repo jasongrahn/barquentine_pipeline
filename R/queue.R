@@ -328,6 +328,11 @@ start_regen_job <- function(project_root, .queue_path = REVIEW_QUEUE_PATH) {
       source("R/ollama.R")
       source("R/claude.R")
       source("R/extract.R")
+      source("R/agentic_extract.R")
+      source("R/agentic_entity_schemas.R")
+      source("R/agentic_entity_extract.R")
+      source("R/agentic_entity_writer.R")
+      source("R/agentic_entity_fact_check.R")
       source("R/regen.R")
       regen_worker(queue_csv_abs)
     },

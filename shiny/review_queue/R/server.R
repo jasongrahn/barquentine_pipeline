@@ -549,6 +549,10 @@ server <- function(input, output, session) {
 
     is_session <- identical(row$note_type, "session") || is.na(row$note_type)
 
+    # entity_verdict carries the agentic verdict from regenerate_entity_draft();
+    # the session branch leaves it NULL and falls back to review_note below.
+    entity_verdict <- NULL
+
     new_draft <- tryCatch({
       if (is_session) {
         generate_note(
@@ -556,14 +560,12 @@ server <- function(input, output, session) {
           section_text = paste(passages, collapse = "\n\n")
         )
       } else {
-        generate_entity_note(
-          entity_name     = .nc(row$entity_name, row$section_id),
-          source_passages = passages,
-          note_type       = .nc(row$note_type, "npc"),
-          prior_draft     = .nc(row$draft, ""),
-          critic_findings = issues,
-          user_feedback   = feedback
-        )
+        fb  <- if (nzchar(feedback)) feedback else NULL
+        res <- regenerate_entity_draft(row, user_feedback = fb)
+        if (is.null(res)) NULL else {
+          entity_verdict <<- res$verdict
+          res$markdown
+        }
       }
     }, error = function(e) {
       action_msg_rv(list(text = paste0("Generation error: ", conditionMessage(e)),
@@ -573,11 +575,15 @@ server <- function(input, output, session) {
 
     if (is.null(new_draft)) return()
 
-    new_verdict <- tryCatch({
-      review_note(new_draft, .nc(row$source_text, ""))
-    }, error = function(e) {
-      list(verdict = "parse_error", confidence = 0, issues = list(), source_quotes = list())
-    })
+    new_verdict <- if (!is.null(entity_verdict)) {
+      entity_verdict
+    } else {
+      tryCatch({
+        review_note(new_draft, .nc(row$source_text, ""))
+      }, error = function(e) {
+        list(verdict = "parse_error", confidence = 0, issues = list(), source_quotes = list())
+      })
+    }
 
     tryCatch({
       update_draft(row$section_id, new_draft, new_verdict,
