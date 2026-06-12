@@ -92,10 +92,7 @@ DRY_RUN_PATH    <- "/tmp/barquentine-preview"
 # -----------------------------------------------------------------------------
 # Recursive critic loop
 # -----------------------------------------------------------------------------
-DRAFT_MAX_ITERATIONS          <- 6L   # generator→critic loops before Claude escalation
-DRAFT_PARSE_RETRY_BUDGET      <- 2L   # parse_error retries that do NOT count toward the cap
 PROCESS_ONE_SESSION           <- FALSE # FALSE = process all sessions; TRUE = process only CURRENT_SESSION (for dry-run validation)
-OLLAMA_TIMEOUT_BACKOFF_SECONDS <- 30L  # sleep after a section that had an Ollama timeout
 
 # -----------------------------------------------------------------------------
 # Regeneration queue
