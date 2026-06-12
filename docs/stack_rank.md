@@ -1,6 +1,10 @@
 # Stack Rank — Active Backlog
 
-Last updated: 2026-05-31 (Wet run #10 complete. Three extraction-side fixes applied: system.md null-preference instruction, user_template vault-first rule, .get_value() Python-style "None" string handling. region and notable_features now consistently use vault fallback. description still returns vague non-null Gemma4 prose — model capability boundary confirmed. Next fix direction: writer-side heuristic (prefer vault description when vault is longer than extracted description).)
+Last updated: 2026-06-12 (Phase 4.2 closed — legacy entity critic loop retired on
+branch `cleanup/retire-critic-loop`, agentic entity chain is now the default; net
+−1131 lines, 1186 tests pass. See the P2 Phase 4.2 entry + P3 regen-retirement TODO.)
+
+Prior: 2026-05-31 (Wet run #10 complete. Three extraction-side fixes applied: system.md null-preference instruction, user_template vault-first rule, .get_value() Python-style "None" string handling. region and notable_features now consistently use vault fallback. description still returns vague non-null Gemma4 prose — model capability boundary confirmed. Next fix direction: writer-side heuristic (prefer vault description when vault is longer than extracted description).)
 
 Single-page checklist. Detail entries live in `docs/ideas.md`,
 `docs/phase_next_backlog.md`, and `docs/phase_agentic_extraction_integration.md` —
@@ -80,15 +84,15 @@ move to bottom of its section, don't delete.
 
 ## P2 — Quality / phased work
 
-- [ ] **giff_flotilla (location) draft quality** — WR#10 (2026-05-31): region and
-  notable_features now correctly use vault fallback. Three extraction-side fixes applied:
-  (1) system.md null-preference instruction, (2) user_template vault-first update rule,
-  (3) .get_value() handles model-emitted "None" string. description remains the only gap —
-  Gemma4 always returns vague non-null prose for sparse-passage locations regardless of
-  prompt instruction. Model capability boundary confirmed. Next fix: writer-side heuristic —
-  when vault has a description AND extracted description is shorter than vault description,
-  prefer vault. This does not require model cooperation.
-  [docs/phase_4_2_research_plan.md §4 — sparse-passage thin summaries]
+- [x] **giff_flotilla (location) draft quality** — WR#10 (2026-05-31): region and
+  notable_features use vault fallback (extraction-side fixes: system.md null-preference,
+  user_template vault-first rule, .get_value() "None" handling). The remaining
+  `description` gap (Gemma4 returns vague non-null prose for sparse-passage locations,
+  a confirmed model-capability boundary) was closed writer-side in commit `5800850`:
+  `.assemble_location_markdown()` prefers the vault `## Description` when it is non-empty
+  and longer than the extracted one (via `.extract_vault_section()`). Tested in
+  test-agentic_entity_writer.R. Live giff_flotilla preview verification deferred to the
+  next real run. [docs/phase_4_2_research_plan.md §4 — sparse-passage thin summaries]
 - [x] **`pipeline_path` column on `queue.csv`** — done; values: `critic_loop`,
   `aps_grounding`, `aps_error`. Legacy rows backfilled `critic_loop`.
   (Phase C, commit `3a2c83e`, 2026-05-14)
@@ -105,8 +109,14 @@ move to bottom of its section, don't delete.
 - [x] **Acknowledge critic loop is non-functional** — `CRITIC_AUTO_APPROVE_THRESHOLD: Inf`
   is intentional: all notes go to human review. Documented in CLAUDE.md. Critic loop
   still runs for verdict/confidence signals; auto-approve is deliberately disabled. (2026-05-24)
-- [ ] **Phase 4.2 decision** (gated on 3/3): should agentic subsume the
-  entity-note critic loop? More attractive if P0 #2 is hard to fix.
+- [x] **Phase 4.2 decision** (gated on 3/3): agentic SUBSUMES the entity-note
+  critic loop. Done 2026-06-12 on branch `cleanup/retire-critic-loop`: agentic
+  entity chain made the default (opt-in gate dropped), legacy critic branch
+  retired — removed `entity_refined`/`entity_dispatched` targets,
+  `draft_with_refinement`, `revise_note`, `dispatch_entity_note`,
+  `claude_batch_review_note`, `assemble_entity_note` + their tests + dead config
+  (net −1131 lines). critic.R/claude.R/generate_note/review_note kept (Shiny
+  regen still uses them). 1186 tests pass.
   [phase_agentic_extraction_integration.md → Phase 4]
 - [ ] **Phase 2: chunk-extraction SFT capture** — agentic training data.
   [phase_agentic_extraction_integration.md → Phase 2]
@@ -132,6 +142,13 @@ move to bottom of its section, don't delete.
 - [ ] Auto-evolving rejection-category chips — [ideas.md]
 - [ ] YouTube transcript fetcher — [ideas.md → P2 there, P3 here]
 - [ ] Run Pipeline button in Shiny — [phase_next_backlog.md §4]
+- [ ] **Retire critic machinery fully (regen end-state)** — `R/critic.R`,
+  `R/claude.R`, `generate_note`/`generate_entity_note`, `review_note` survive only
+  because the Shiny Regenerate button (`shiny/review_queue/R/server.R:554,577`) +
+  background regen worker (`R/regen.R:26,40`) still call them. Repoint regen at the
+  agentic entity extraction path, then these + remaining `CRITIC_*`/`CLAUDE_MODEL`
+  config can retire. Also: `.entity_relative_path()` (R/router.R) is now
+  production-dead (kept for its own tests). Follow-up to `cleanup/retire-critic-loop`.
 - [ ] **Slug helper consolidation** — `make_slug()` (R/source_c.R) and
   `agentic_slug()` (R/agentic_extract.R) do the same thing; merge into one
   shared function. Cleanup branch.
