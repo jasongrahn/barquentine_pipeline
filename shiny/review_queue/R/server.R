@@ -539,33 +539,46 @@ server <- function(input, output, session) {
     if (save_fact && nzchar(feedback))
       save_campaign_fact(feedback, CAMPAIGN_FACTS_PATH)
 
+    is_session <- identical(row$note_type, "session") || is.na(row$note_type)
+
+    # Session regen re-runs the full agentic chunk pipeline, which is too heavy
+    # to run synchronously in the Shiny event loop. Enqueue it for the
+    # background worker and return early; the worker fills the draft and the
+    # queue reloads later. The entity branch below keeps its synchronous path.
+    if (is_session) {
+      handled <- tryCatch({
+        queue_for_regen(row$section_id, user_feedback = feedback,
+                        .queue_path = QUEUE_PATH_ABS)
+        start_regen_job(PROJECT_ROOT, .queue_path = QUEUE_PATH_ABS)
+        action_msg_rv(list(
+          text  = "\u23F3 Session queued for background regeneration\u2026",
+          color = "#555"))
+        TRUE
+      }, error = function(e) {
+        msg <- if (identical(conditionMessage(e), "regen_cap_exceeded"))
+          "Regeneration limit reached for this session."
+        else paste0("Queue error: ", conditionMessage(e))
+        action_msg_rv(list(text = msg, color = "#dc3545"))
+        FALSE
+      })
+      if (handled) .reload_queue()
+      return()
+    }
+
     action_msg_rv(list(text = "\u23F3 Regenerating\u2026 (this may take 30\u201360 seconds)",
                        color = "#555"))
 
-    passages <- str_split(.nc(row$source_text, ""), "\n\n---\n\n")[[1]]
-    passages <- passages[nzchar(passages)]
-
     issues   <- .parse_json_col(row$issues)
 
-    is_session <- identical(row$note_type, "session") || is.na(row$note_type)
-
-    # entity_verdict carries the agentic verdict from regenerate_entity_draft();
-    # the session branch leaves it NULL and falls back to review_note below.
+    # entity_verdict carries the agentic verdict from regenerate_entity_draft().
     entity_verdict <- NULL
 
     new_draft <- tryCatch({
-      if (is_session) {
-        generate_note(
-          episode_id   = row$section_id,
-          section_text = paste(passages, collapse = "\n\n")
-        )
-      } else {
-        fb  <- if (nzchar(feedback)) feedback else NULL
-        res <- regenerate_entity_draft(row, user_feedback = fb)
-        if (is.null(res)) NULL else {
-          entity_verdict <<- res$verdict
-          res$markdown
-        }
+      fb  <- if (nzchar(feedback)) feedback else NULL
+      res <- regenerate_entity_draft(row, user_feedback = fb)
+      if (is.null(res)) NULL else {
+        entity_verdict <<- res$verdict
+        res$markdown
       }
     }, error = function(e) {
       action_msg_rv(list(text = paste0("Generation error: ", conditionMessage(e)),

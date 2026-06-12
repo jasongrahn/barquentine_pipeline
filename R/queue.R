@@ -333,6 +333,11 @@ start_regen_job <- function(project_root, .queue_path = REVIEW_QUEUE_PATH) {
       source("R/agentic_entity_extract.R")
       source("R/agentic_entity_writer.R")
       source("R/agentic_entity_fact_check.R")
+      source("R/postprocess_shared.R")
+      source("R/agentic_postprocess.R")
+      source("R/agentic_fact_check.R")
+      source("R/agentic_writer.R")
+      source("R/source_c.R")
       source("R/regen.R")
       regen_worker(queue_csv_abs)
     },

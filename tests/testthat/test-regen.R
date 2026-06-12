@@ -57,19 +57,24 @@ make_verdict <- function(verdict = "flagged", confidence = 0.7,
 
 # regen_worker() — session note -----------------------------------------------
 
-test_that("regen_worker processes session row and sets status to pending", {
+test_that("regen_worker processes session row via regenerate_session_draft", {
   tmp <- local_tempdir()
   .make_queue(tmp, section_id = "S2e10", note_type = "session")
 
   # Write a lock file (worker removes it on exit)
   writeLines(character(0), file.path(tmp, ".regen.lock"))
 
-  assign("generate_note", function(...) "---\ntags: [session]\n## Summary\nregenerated",
-         envir = globalenv())
-  withr::defer(rm("generate_note", envir = globalenv()))
+  captured_sid <- NULL
+  .stub_global("regenerate_session_draft", function(section_id) {
+    captured_sid <<- section_id
+    list(markdown = "---\ntags: [session]\n## Summary\nregenerated",
+         verdict  = list(verdict = "agentic_no_critic", confidence = 0.9,
+                         issues = list(), source_quotes = list()))
+  })
 
   regen_worker(file.path(tmp, "queue.csv"))
 
+  expect_equal(captured_sid, "S2e10")
   df <- readr::read_csv(file.path(tmp, "queue.csv"), show_col_types = FALSE)
   expect_equal(df$status[df$section_id == "S2e10"], "pending")
   expect_equal(df$draft[df$section_id == "S2e10"],
@@ -81,9 +86,10 @@ test_that("regen_worker increments regen_count for session note", {
   .make_queue(tmp)
   writeLines(character(0), file.path(tmp, ".regen.lock"))
 
-  assign("generate_note", function(...) "---\ntags: [session]\n## Summary\nok",
-         envir = globalenv())
-  withr::defer(rm("generate_note", envir = globalenv()))
+  .stub_global("regenerate_session_draft", function(section_id)
+    list(markdown = "---\ntags: [session]\n## Summary\nok",
+         verdict  = list(verdict = "agentic_no_critic", confidence = 0.9,
+                         issues = list(), source_quotes = list())))
 
   regen_worker(file.path(tmp, "queue.csv"))
 
@@ -231,6 +237,122 @@ test_that("regenerate_entity_draft returns NULL when extraction is NULL", {
   expect_null(regenerate_entity_draft(row))
 })
 
+# regenerate_session_draft() — pipeline wiring -------------------------------
+
+# Stub the whole agentic session chain + registry, and point NAS at a tempdir
+# holding a fake VTT file so the file.exists() guard passes. No live Ollama,
+# no NAS access.
+.stub_session_pipeline <- function(tmp, calls, .envir = parent.frame()) {
+  vtt_file <- file.path(tmp, "s02e34.vtt")
+  writeLines("WEBVTT", vtt_file)
+
+  .stub_global("NAS_MOUNT", tmp, .envir = .envir)
+  .stub_global("strip_agentic_suffix", function(section_id)
+    sub("__agentic$", "", section_id), .envir = .envir)
+  .stub_global("load_vtt_registry", function(...) {
+    calls$order[[length(calls$order) + 1]] <<- "load_vtt_registry"
+    data.frame(episode_id = "s02e34", filename = "s02e34.vtt",
+               stringsAsFactors = FALSE)
+  }, .envir = .envir)
+  .stub_global("preprocess_vtt_for_extraction", function(vtt_path, ...) {
+    calls$order[[length(calls$order) + 1]] <<- "preprocess"
+    calls$vtt_path <<- vtt_path
+    list(chunks = data.frame(text = c("a", "b"), stringsAsFactors = FALSE),
+         recap_context = "recap", meta = list())
+  }, .envir = .envir)
+  .stub_global("extract_chunk", function(chunk_row, recap_context, chunk_id, ...) {
+    calls$order[[length(calls$order) + 1]] <<- paste0("extract_", chunk_id)
+    list(chunk_id = chunk_id)
+  }, .envir = .envir)
+  .stub_global("merge_chunk_extractions", function(per_chunk_results, ...) {
+    calls$order[[length(calls$order) + 1]] <<- "merge"
+    calls$n_chunks <<- length(per_chunk_results)
+    list(merged = TRUE)
+  }, .envir = .envir)
+  .stub_global("postprocess_extracted", function(extracted, ...) {
+    calls$order[[length(calls$order) + 1]] <<- "postprocess"
+    extracted
+  }, .envir = .envir)
+  .stub_global("synthesize_session_recap", function(merged, vtt_meta, ...) {
+    calls$order[[length(calls$order) + 1]] <<- "synthesize"
+    list(synopsis = "syn")
+  }, .envir = .envir)
+  .stub_global("assemble_session_markdown", function(synthesis, merged, vtt_meta, ...) {
+    calls$order[[length(calls$order) + 1]] <<- "assemble"
+    "## session markdown"
+  }, .envir = .envir)
+  invisible(vtt_file)
+}
+
+test_that("regenerate_session_draft wires the pipeline in order and shapes verdict", {
+  tmp   <- local_tempdir()
+  calls <- new.env()
+  calls$order <- list()
+  .stub_session_pipeline(tmp, calls)
+
+  .stub_global("verify_line_citations", function(merged, vtt) {
+    calls$order[[length(calls$order) + 1]] <- "verify"
+    list(confidence = 0.83, n_unsupported = 1L,
+         results = data.frame(
+           kind = "npc", line = 3L, supported = FALSE,
+           claim = "Grog the unseen", stringsAsFactors = FALSE))
+  })
+
+  res <- regenerate_session_draft("s02e34__agentic")
+
+  expect_equal(unlist(calls$order),
+               c("load_vtt_registry", "preprocess",
+                 "extract_1", "extract_2", "merge", "postprocess",
+                 "synthesize", "assemble", "verify"))
+  expect_equal(calls$n_chunks, 2L)
+  expect_equal(res$markdown, "## session markdown")
+  expect_equal(res$verdict$verdict, "agentic_no_critic")
+  expect_equal(res$verdict$confidence, 0.83)
+  expect_equal(res$verdict$source_quotes, list())
+  expect_length(res$verdict$issues, 1L)
+  expect_true(grepl("npc", res$verdict$issues[[1]]))
+  expect_true(grepl("Grog the unseen", res$verdict$issues[[1]]))
+})
+
+test_that("regenerate_session_draft confidence falls back to NA when fact_check has none", {
+  tmp   <- local_tempdir()
+  calls <- new.env()
+  calls$order <- list()
+  .stub_session_pipeline(tmp, calls)
+  .stub_global("verify_line_citations", function(merged, vtt)
+    list(results = NULL))
+
+  res <- regenerate_session_draft("s02e34__agentic")
+  expect_true(is.na(res$verdict$confidence))
+  expect_equal(res$verdict$issues, list())
+})
+
+test_that("regenerate_session_draft errors when no registry row matches", {
+  tmp <- local_tempdir()
+  .stub_global("NAS_MOUNT", tmp)
+  .stub_global("strip_agentic_suffix", function(section_id)
+    sub("__agentic$", "", section_id))
+  .stub_global("load_vtt_registry", function(...)
+    data.frame(episode_id = "s99e99", filename = "x.vtt",
+               stringsAsFactors = FALSE))
+
+  expect_error(regenerate_session_draft("s02e34__agentic"),
+               "no VTT registry row")
+})
+
+test_that("regenerate_session_draft errors when the VTT file is missing", {
+  tmp <- local_tempdir()
+  .stub_global("NAS_MOUNT", tmp)  # no file written
+  .stub_global("strip_agentic_suffix", function(section_id)
+    sub("__agentic$", "", section_id))
+  .stub_global("load_vtt_registry", function(...)
+    data.frame(episode_id = "s02e34", filename = "s02e34.vtt",
+               stringsAsFactors = FALSE))
+
+  expect_error(regenerate_session_draft("s02e34__agentic"),
+               "VTT file not found")
+})
+
 # extract_entity() — user_feedback reaches the prompt -------------------------
 
 test_that("extract_entity appends reviewer feedback to the user prompt", {
@@ -272,8 +394,10 @@ test_that("regen_worker flips item back to regen_queued when generation returns 
   .make_queue(tmp)
   writeLines(character(0), file.path(tmp, ".regen.lock"))
 
-  assign("generate_note", function(...) NULL, envir = globalenv())
-  withr::defer(rm("generate_note", envir = globalenv()))
+  .stub_global("regenerate_session_draft", function(section_id)
+    list(markdown = NULL,
+         verdict  = list(verdict = "agentic_no_critic", confidence = NA_real_,
+                         issues = list(), source_quotes = list())))
 
   regen_worker(file.path(tmp, "queue.csv"))
 
@@ -286,8 +410,7 @@ test_that("regen_worker flips item back to regen_queued when generation throws",
   .make_queue(tmp)
   writeLines(character(0), file.path(tmp, ".regen.lock"))
 
-  assign("generate_note", function(...) stop("Ollama timeout"), envir = globalenv())
-  withr::defer(rm("generate_note", envir = globalenv()))
+  .stub_global("regenerate_session_draft", function(section_id) stop("Ollama timeout"))
 
   # Should not throw — error is caught internally
   expect_no_error(regen_worker(file.path(tmp, "queue.csv")))
@@ -304,9 +427,10 @@ test_that("regen_worker removes lock file on success", {
   lock <- file.path(tmp, ".regen.lock")
   writeLines(character(0), lock)
 
-  assign("generate_note", function(...) "---\ntags: [session]\n## Summary\nok",
-         envir = globalenv())
-  withr::defer(rm("generate_note", envir = globalenv()))
+  .stub_global("regenerate_session_draft", function(section_id)
+    list(markdown = "---\ntags: [session]\n## Summary\nok",
+         verdict  = list(verdict = "agentic_no_critic", confidence = 0.9,
+                         issues = list(), source_quotes = list())))
 
   regen_worker(file.path(tmp, "queue.csv"))
   expect_false(file.exists(lock))
@@ -318,8 +442,7 @@ test_that("regen_worker removes lock file even when generation throws", {
   lock <- file.path(tmp, ".regen.lock")
   writeLines(character(0), lock)
 
-  assign("generate_note", function(...) stop("crash"), envir = globalenv())
-  withr::defer(rm("generate_note", envir = globalenv()))
+  .stub_global("regenerate_session_draft", function(section_id) stop("crash"))
 
   expect_no_error(regen_worker(file.path(tmp, "queue.csv")))
   expect_false(file.exists(lock))
@@ -338,8 +461,10 @@ test_that("regen_worker ignores non-regenerating rows", {
   readr::write_csv(df, file.path(tmp, "queue.csv"))
 
   writeLines(character(0), file.path(tmp, ".regen.lock"))
-  assign("generate_note", function(...) "---\nnew\n", envir = globalenv())
-  withr::defer(rm("generate_note", envir = globalenv()))
+  .stub_global("regenerate_session_draft", function(section_id)
+    list(markdown = "---\nnew\n",
+         verdict  = list(verdict = "agentic_no_critic", confidence = 0.9,
+                         issues = list(), source_quotes = list())))
 
   regen_worker(file.path(tmp, "queue.csv"))
 

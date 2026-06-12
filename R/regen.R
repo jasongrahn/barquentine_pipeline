@@ -53,6 +53,93 @@ regenerate_entity_draft <- function(row, user_feedback = NULL,
   list(markdown = markdown, verdict = verdict_list, fact_check = fact_check)
 }
 
+# Regenerate a session draft via the agentic chunk pipeline.
+# Re-runs the full per-session extraction (it needs vtt_meta + merged
+# extractions that the queue row does not store): recover the base episode id,
+# resolve the VTT path from the registry, then run preprocess -> per-chunk
+# extract -> merge -> postprocess -> synthesize -> assemble -> fact-check.
+# Returns the new markdown plus an agentic verdict_list shaped like
+# dispatch_agentic_session(). Mirrors _targets.R:336-520.
+# Dependencies (preprocess_vtt_for_extraction, extract_chunk,
+# merge_chunk_extractions, postprocess_extracted, synthesize_session_recap,
+# assemble_session_markdown, verify_line_citations, strip_agentic_suffix,
+# load_vtt_registry) are sourced by the caller; see start_regen_job() and
+# Shiny global.R.
+regenerate_session_draft <- function(section_id) {
+  base <- strip_agentic_suffix(section_id)
+
+  registry <- load_vtt_registry()
+  reg_row  <- registry[registry$episode_id == base, , drop = FALSE]
+  if (nrow(reg_row) == 0L)
+    stop("regenerate_session_draft: no VTT registry row for episode ", base)
+
+  vtt_path <- file.path(NAS_MOUNT, reg_row$filename[[1]])
+  if (!file.exists(vtt_path))
+    stop("regenerate_session_draft: VTT file not found: ", vtt_path)
+
+  vtt <- preprocess_vtt_for_extraction(vtt_path,
+                                       chunk_size = AGENTIC_CHUNK_SIZE_LINES)
+
+  chunks <- vtt$chunks
+  per_chunk <- lapply(seq_len(nrow(chunks)), function(i) {
+    extract_chunk(
+      chunk_row     = chunks[i, ],
+      recap_context = vtt$recap_context,
+      chunk_id      = i,
+      model         = OLLAMA_MODEL,
+      base_url      = OLLAMA_BASE_URL
+    )
+  })
+
+  merged <- merge_chunk_extractions(per_chunk,
+                                    dialogue_keep_n = AGENTIC_DIALOGUE_KEEP_N)
+  merged <- postprocess_extracted(
+    merged,
+    protected_path = PROTECTED_ENTITIES_PATH,
+    aliases_path   = ENTITY_ALIASES_PATH,
+    event_keep_n   = AGENTIC_EVENT_KEEP_N
+  )
+
+  synth <- synthesize_session_recap(merged    = merged,
+                                    vtt_meta  = vtt,
+                                    model     = OLLAMA_MODEL,
+                                    base_url  = OLLAMA_BASE_URL)
+  markdown <- assemble_session_markdown(synthesis = synth,
+                                        merged    = merged,
+                                        vtt_meta  = vtt)
+  fact_check <- verify_line_citations(merged, vtt)
+
+  # Surface unsupported line citations as issue strings — same shaping as
+  # dispatch_agentic_session().
+  issues  <- list()
+  results <- fact_check$results
+  if (!is.null(results) && is.data.frame(results) && nrow(results) > 0L) {
+    unsup <- results[!results$supported, , drop = FALSE]
+    if (nrow(unsup) > 0L) {
+      issues <- lapply(seq_len(nrow(unsup)), function(i) {
+        kind  <- unsup$kind[[i]]
+        line  <- unsup$line[[i]]
+        claim <- if ("claim" %in% names(unsup)) unsup$claim[[i]] else NA_character_
+        line_label <- if (is.na(line)) "no line cited" else paste0("line ", line)
+        claim_label <- if (!is.na(claim) && nzchar(claim))
+          paste0(": \"", substr(claim, 1L, 160L),
+                 if (nchar(claim) > 160L) "…\"" else "\"")
+        else ""
+        sprintf("[%s, %s] not grounded in source%s", kind, line_label, claim_label)
+      })
+    }
+  }
+
+  verdict_list <- list(
+    verdict       = "agentic_no_critic",
+    confidence    = fact_check$confidence %||% NA_real_,
+    issues        = issues,
+    source_quotes = list()
+  )
+
+  list(markdown = markdown, verdict = verdict_list, fact_check = fact_check)
+}
+
 regen_worker <- function(queue_csv_abs) {
   lock_path <- file.path(dirname(queue_csv_abs), ".regen.lock")
 
@@ -73,10 +160,7 @@ regen_worker <- function(queue_csv_abs) {
 
     new_draft <- tryCatch({
       if (identical(row$note_type, "session") || is.na(row$note_type)) {
-        generate_note(
-          episode_id  = row$section_id,
-          section_text = row$source_text
-        )
+        regenerate_session_draft(row$section_id)$markdown
       } else if (row$note_type %in% c("npc", "location", "faction", "pc")) {
         feedback <- if (is.na(row$user_feedback) || !nzchar(trimws(row$user_feedback)))
                       NULL else row$user_feedback
