@@ -18,8 +18,7 @@ if (!exists("%||%", mode = "function"))
 # Rebuilds an entity_record from a queue row, runs extract -> assemble ->
 # fact_check, and returns the new markdown plus an agentic verdict_list.
 # Returns NULL if extraction is NULL or timed out (caller handles retry/failure).
-regenerate_entity_draft <- function(row, user_feedback = NULL,
-                                    .queue_path = REVIEW_QUEUE_PATH) {
+regenerate_entity_draft <- function(row, user_feedback = NULL) {
   passages <- strsplit(row$source_text, "\n\n---\n\n", fixed = TRUE)[[1]]
   passages <- passages[nzchar(passages)]
 
