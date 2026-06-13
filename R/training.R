@@ -205,8 +205,8 @@ generate_training_data <- function(.queue_path    = REVIEW_QUEUE_PATH,
 # Cross-references sft.jsonl (the prompt/completion pairs written by
 # generate_training_data on accepted items) with queue.csv (which holds the
 # critic confidence for each section) and writes the most recent N qualifying
-# records to a separate JSONL file. Pass that file's path to
-# session_prompt(few_shot_paths = ...) to use the pool as in-prompt examples.
+# records to a separate JSONL file. The resulting pool can be supplied as
+# in-prompt few-shot examples by a generation prompt builder.
 # Returns the count of records written.
 refresh_few_shots <- function(n = 10L,
                                confidence_threshold = 0.85,

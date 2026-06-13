@@ -1,7 +1,10 @@
 # Background regeneration worker.
 # Runs inside a callr::r_bg() child process launched by start_regen_job().
-# All dependencies (config.R, queue.R, ollama.R, claude.R, extract.R) are
-# sourced by the callr wrapper before this function is called.
+# Core dependencies (config.R, queue.R, ollama.R) plus the agentic entity flow
+# (agentic_extract.R, agentic_entity_schemas.R, agentic_entity_extract.R,
+# agentic_entity_writer.R, agentic_entity_fact_check.R, postprocess_shared.R,
+# agentic_postprocess.R, source_c.R) are sourced by the callr wrapper before
+# this function is called.
 
 # Agentic entity regeneration deps (extract_entity, assemble_entity_markdown,
 # fact_check_entity) are sourced by the caller: the callr worker wrapper in

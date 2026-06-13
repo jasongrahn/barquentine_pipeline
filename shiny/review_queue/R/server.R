@@ -588,15 +588,7 @@ server <- function(input, output, session) {
 
     if (is.null(new_draft)) return()
 
-    new_verdict <- if (!is.null(entity_verdict)) {
-      entity_verdict
-    } else {
-      tryCatch({
-        review_note(new_draft, .nc(row$source_text, ""))
-      }, error = function(e) {
-        list(verdict = "parse_error", confidence = 0, issues = list(), source_quotes = list())
-      })
-    }
+    new_verdict <- entity_verdict
 
     tryCatch({
       update_draft(row$section_id, new_draft, new_verdict,

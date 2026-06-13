@@ -3,8 +3,6 @@ library(withr)
 
 source(test_path("../../config.R"))
 source(test_path("../../R/ollama.R"))
-source(test_path("../../R/claude.R"))
-source(test_path("../../R/critic.R"))
 source(test_path("../../R/writer.R"))
 source(test_path("../../R/router.R"))
 

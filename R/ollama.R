@@ -93,8 +93,6 @@ ollama_generate <- function(prompt, system_prompt, model = OLLAMA_MODEL,
   # can distinguish from empty content. Only httr2_error is caught here —
   # malformed JSON, schema violations, and empty content are distinct failure
   # modes and must not be silently swallowed as timeouts.
-  # claude_review_note() in R/claude.R is the direct escalation target from the
-  # inner loop (draft_with_refinement); no signature change needed there.
   content <- tryCatch(
     .build_ollama_request(prompt, system_prompt, model, base_url,
                           format, options, think) |>
