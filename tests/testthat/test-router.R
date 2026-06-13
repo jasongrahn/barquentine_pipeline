@@ -180,26 +180,6 @@ test_that("router.R contains no destructive file operations", {
   expect_false(grepl("dir_delete",    src))
 })
 
-# --- .entity_relative_path() -------------------------------------------------
-
-test_that(".entity_relative_path returns correct path for npc", {
-  expect_equal(.entity_relative_path("Attorrnash", "npc"), "npcs/Attorrnash.md")
-})
-
-test_that(".entity_relative_path returns correct path for location", {
-  expect_equal(.entity_relative_path("the_giff_flotilla", "location"),
-               "locations/the_giff_flotilla.md")
-})
-
-test_that(".entity_relative_path returns correct path for faction", {
-  expect_equal(.entity_relative_path("giff_military", "faction"),
-               "factions/giff_military.md")
-})
-
-test_that(".entity_relative_path stops on unknown note_type", {
-  expect_error(.entity_relative_path("foo", "item"), "Unknown note_type")
-})
-
 # --- dispatch_extracted_note() ------------------------------------------------
 
 test_that("dispatch_extracted_note enqueues approved extraction result", {

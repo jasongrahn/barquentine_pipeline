@@ -119,13 +119,3 @@ dispatch_extracted_note <- function(assembled_draft, verification, section_id,
                  .queue_path     = .queue_path)
   invisible("enqueued")
 }
-
-.entity_relative_path <- function(entity_id, note_type) {
-  switch(note_type,
-    "pc"       = file.path("npcs",      paste0(entity_id, ".md")),
-    "npc"      = file.path("npcs",      paste0(entity_id, ".md")),
-    "location" = file.path("locations", paste0(entity_id, ".md")),
-    "faction"  = file.path("factions",  paste0(entity_id, ".md")),
-    stop("Unknown note_type: ", note_type)
-  )
-}
