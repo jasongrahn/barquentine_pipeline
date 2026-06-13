@@ -1,6 +1,12 @@
 # Stack Rank — Active Backlog
 
-Last updated: 2026-06-12 (Phase 4.2 closed — legacy entity critic loop retired on
+Last updated: 2026-06-13 (Full critic retirement — branch
+`cleanup/full-critic-retirement`. Repointed both regen paths at the agentic flow
+(session regen runs async via the background worker), then deleted critic.R /
+claude.R / extract.R + .entity_relative_path. config.R untouched. 1050 tests pass.
+See the P3 "Retire critic machinery fully" entry — now [x].)
+
+Prior: 2026-06-12 (Phase 4.2 closed — legacy entity critic loop retired on
 branch `cleanup/retire-critic-loop`, agentic entity chain is now the default; net
 −1131 lines, 1186 tests pass. See the P2 Phase 4.2 entry + P3 regen-retirement TODO.)
 
@@ -142,13 +148,21 @@ move to bottom of its section, don't delete.
 - [ ] Auto-evolving rejection-category chips — [ideas.md]
 - [ ] YouTube transcript fetcher — [ideas.md → P2 there, P3 here]
 - [ ] Run Pipeline button in Shiny — [phase_next_backlog.md §4]
-- [ ] **Retire critic machinery fully (regen end-state)** — `R/critic.R`,
-  `R/claude.R`, `generate_note`/`generate_entity_note`, `review_note` survive only
-  because the Shiny Regenerate button (`shiny/review_queue/R/server.R:554,577`) +
-  background regen worker (`R/regen.R:26,40`) still call them. Repoint regen at the
-  agentic entity extraction path, then these + remaining `CRITIC_*`/`CLAUDE_MODEL`
-  config can retire. Also: `.entity_relative_path()` (R/router.R) is now
-  production-dead (kept for its own tests). Follow-up to `cleanup/retire-critic-loop`.
+- [x] **Retire critic machinery fully (regen end-state)** — done 2026-06-13 on
+  branch `cleanup/full-critic-retirement` (4 gated commits). Both regen paths
+  repointed at the agentic flow: entity regen → `regenerate_entity_draft`
+  (extract_entity + assemble_entity_markdown + fact_check_entity; reviewer
+  feedback threaded into the prompt); session regen → `regenerate_session_draft`
+  (full agentic chunk pipeline) run **async** via the existing background worker
+  (synchronous Shiny path would freeze the event loop). Then deleted `R/critic.R`,
+  `R/claude.R`, `R/extract.R` + their tests + `scripts/replay_iteration_logs.R`,
+  and removed `.entity_relative_path()` (R/router.R) + its tests. **config.R
+  untouched** — `CLAUDE_MODEL` (story.R), `CRITIC_ESCALATE_THRESHOLD` (router.R),
+  `CRITIC_AUTO_APPROVE_THRESHOLD` (documented-preserved), and `OLLAMA_CRITIC_MODEL`
+  (agentic spotting + fact_critic) all retain live uses; `CRITIC_SYSTEM_PROMPT`
+  died with critic.R. 1050 pass / 1 known-fail / 0 skip; DAG intact; zero residual
+  references. ⚠️ Live regen (entity + session) not yet smoke-tested — needs
+  Ollama + NAS mount; verify before merge.
 - [ ] **Slug helper consolidation** — `make_slug()` (R/source_c.R) and
   `agentic_slug()` (R/agentic_extract.R) do the same thing; merge into one
   shared function. Cleanup branch.
